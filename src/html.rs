@@ -5,34 +5,14 @@ use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use xml5ever::tendril::TendrilSink;
 
 #[derive(Debug)]
-enum TableState {
-    None,
-    Table,
-    Tr,
-    Th,
-    Td,
-    Done,
-}
-
-impl Default for TableState {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
-#[derive(Debug)]
 struct Working {
-    table_state: TableState,
     table_stack: Vec<Handle>,
-    pub head: Option<Handle>,
 }
 
 impl Default for Working {
     fn default() -> Self {
         Self {
-            table_state: Default::default(),
             table_stack: Default::default(),
-            head: Default::default(),
         }
     }
 }
@@ -56,17 +36,10 @@ fn walk(handle: &Handle, working: &mut Working) {
         match name.local.as_ref() {
             "table" => {
                 working.table_stack.push(handle.clone());
-                working.table_state = TableState::Table;
             }
-            "tr" => {
-                working.table_state = TableState::Tr;
-            }
-            "th" => {
-                working.table_state = TableState::Th;
-            }
-            "td" => {
-                working.table_state = TableState::Td;
-            }
+            "tr" => {}
+            "th" => {}
+            "td" => {}
             _ => {}
         }
     }

@@ -4,7 +4,7 @@ mod global_memory;
 mod html;
 mod win_clipboard;
 
-use std::{fs::read_to_string, io::Read, path::PathBuf, rc::Rc};
+use std::{fs::read_to_string, io::Read, path::PathBuf};
 
 use clap::Parser;
 use clip::{Clip, ClipboardFormat, clipboard::Clipboard};
@@ -49,6 +49,8 @@ fn main() {
             let table = lua.create_table().unwrap();
 
             let html = clip.get_data(&format).unwrap().to_string();
+            table.set("raw", html.clone()).unwrap();
+
             let html = Clipboard::get_html(&html);
 
             table.set("html", html.clone()).unwrap();
@@ -60,8 +62,14 @@ fn main() {
             lua.globals().set("qlp", table).unwrap();
         }
         ClipboardFormat::Text(_) => {
+            let table = lua.create_table().unwrap();
+
             let text = clip.get_data(&format).unwrap().to_string();
-            lua.globals().set("qlp", text).unwrap();
+            table.set("raw", text.clone()).unwrap();
+
+            table.set("text", text.clone()).unwrap();
+
+            lua.globals().set("qlp", table).unwrap();
         }
     }
 
