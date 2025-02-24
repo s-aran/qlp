@@ -1,3 +1,5 @@
+mod builtin;
+mod builtins;
 mod clip;
 mod error;
 mod global_memory;
@@ -42,6 +44,8 @@ fn main() {
     let mut clip = Clipboard::new();
 
     let lua = mlua::Lua::new();
+    let _ = builtin::init(&lua).unwrap();
+
     let format = clip.determine_format().unwrap();
 
     match format {
@@ -51,8 +55,13 @@ fn main() {
             let html = clip.get_data(&format).unwrap().to_string();
             table.set("raw", html.clone()).unwrap();
 
-            let html = Clipboard::get_html(&html);
+            let text = clip
+                .get_data(&ClipboardFormat::Text("".to_string()))
+                .unwrap()
+                .to_string();
+            table.set("text", text.clone()).unwrap();
 
+            let html = Clipboard::get_html(&html);
             table.set("html", html.clone()).unwrap();
 
             let dom = parse_html(&html);
