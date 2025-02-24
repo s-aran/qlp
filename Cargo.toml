@@ -25,5 +25,4 @@ html5ever = { git = "https://github.com/servo/html5ever.git", branch = "main" }
 markup5ever = { git = "https://github.com/servo/html5ever.git", branch = "main" }
 markup5ever_rcdom = { git = "https://github.com/servo/html5ever.git", branch = "main" }
 xml5ever = { git = "https://github.com/servo/html5ever.git", branch = "main" }
-libmll = { version = "0.1", features = ["http"], path = "../mll" }
 clap = { version = "4.5", features = ["derive"] }
