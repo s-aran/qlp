@@ -4,16 +4,17 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# html5ever = "0.29"
-# markup5ever = { version = "0.14" }
-# markup5ever_rcdom = { version = "0.3" }
 mlua = { version = "0.10", features = [
   "anyhow",
   "lua54",
+  "vendored",
   "macros",
   "serialize",
   "userdata-wrappers",
 ] }
+# html5ever = "0.29"
+# markup5ever = { version = "0.14" }
+# markup5ever_rcdom = { version = "0.3" }
 regex = { version = "1.11", features = ["use_std"] }
 serde_json = "1.0.139"
 windows = { version = "0.60.0", features = [
