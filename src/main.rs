@@ -73,5 +73,20 @@ fn main() {
         }
     }
 
-    lua.load(script).exec().unwrap();
+    // execute lua script
+    match lua.load(script).exec() {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("{}", e);
+        }
+    }
+
+    // set clipboard
+    let current_table = lua.globals().get::<mlua::Table>("qlp").unwrap();
+    match current_table.get::<String>("result") {
+        Ok(text) => {
+            clip.set_data(&ClipboardFormat::Text(text)).unwrap();
+        }
+        Err(_) => {}
+    }
 }
