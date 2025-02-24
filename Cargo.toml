@@ -3,6 +3,10 @@ name = "qca"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+http = ["dep:chitose"]
+
 [dependencies]
 mlua = { version = "0.10", features = [
   "anyhow",
@@ -27,3 +31,4 @@ markup5ever = { git = "https://github.com/servo/html5ever.git", branch = "main" 
 markup5ever_rcdom = { git = "https://github.com/servo/html5ever.git", branch = "main" }
 xml5ever = { git = "https://github.com/servo/html5ever.git", branch = "main" }
 clap = { version = "4.5", features = ["derive"] }
+chitose = { version = "0.1", git = "https://github.com/s-aran/chitose.git", branch = "main", optional = true }
