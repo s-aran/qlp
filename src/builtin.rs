@@ -3,8 +3,13 @@ use mlua::Lua;
 
 pub fn init(lua: &Lua) -> mlua::Result<()> {
     {
+        use crate::builtins::json::JsonToTable;
+        use crate::builtins::json::MinifyJson;
         use crate::builtins::json::PrettierJson;
+
         let _ = PrettierJson {}.set_function(lua);
+        let _ = MinifyJson {}.set_function(lua);
+        let _ = JsonToTable {}.set_function(lua);
     }
 
     {
