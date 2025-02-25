@@ -1,9 +1,6 @@
-use std::{
-    ffi::{OsStr, OsString},
-    process::Command,
-};
+use std::process::Command;
 
-use mlua::{Function, IntoLua, Lua};
+use mlua::{FromLua, Function, IntoLua, Lua};
 
 use super::builtin::BuiltinFunction;
 
@@ -38,6 +35,18 @@ impl IntoLua for ExecResult {
     }
 }
 
+impl FromLua for ExecResult {
+    fn from_lua(value: mlua::Value, lua: &Lua) -> mlua::Result<Self> {
+        let table = value.as_table().unwrap();
+
+        Ok(ExecResult {
+            code: table.get("code")?,
+            stdout: table.get("stdout")?,
+            stderr: table.get("stderr")?,
+        })
+    }
+}
+
 fn system(program: String, args: Vec<String>) -> ExecResult {
     let mut command = Command::new(program.as_str());
     let result = command.args(args);
@@ -47,5 +56,41 @@ fn system(program: String, args: Vec<String>) -> ExecResult {
         code: output.status.code().unwrap(),
         stdout: String::from_utf8(output.stdout).unwrap(),
         stderr: String::from_utf8(output.stderr).unwrap(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::builtins::exec::system;
+
+    #[test]
+    fn test_system() {
+        let program = "echo".to_string();
+        let args = vec!["foo", "bar", "baz", "qux"]
+            .iter()
+            .map(|e| (*e).into())
+            .collect::<Vec<String>>();
+        let result = system(program, args);
+
+        assert_eq!(0, result.code);
+        assert_eq!("foo bar baz qux\n", result.stdout);
+        assert_eq!("", result.stderr);
+    }
+
+    #[test]
+    fn test_exec_by_lua() {
+        let lua = Lua::new();
+
+        let _ = Exec {}.set_function(&lua);
+        let _ = lua
+            .load(r#"result = exec("echo", {"foo", "bar", "baz", "qux"})"#)
+            .exec();
+
+        let result = lua.globals().get::<ExecResult>("result").unwrap();
+
+        assert_eq!(0, result.code);
+        assert_eq!("foo bar baz qux\n", result.stdout);
+        assert_eq!("", result.stderr);
     }
 }
