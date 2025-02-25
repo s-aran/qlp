@@ -196,7 +196,6 @@ mod tests {
     use mlua::Table;
 
     use crate::clip::Clip;
-    #[cfg(target_os = "windows")]
     use crate::clip::Clipboard;
 
     use super::*;
