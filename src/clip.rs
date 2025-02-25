@@ -32,7 +32,7 @@ pub trait Clip {
     fn get_data(&mut self, format: &ClipboardFormat) -> Result<ClipboardFormat, Error>;
     fn set_data(&mut self, data: &ClipboardFormat) -> Result<(), Error>;
 
-    fn get_html<T>(data: &T) -> String;
+    fn get_html<T: ToString>(data: &T) -> String;
 }
 
 #[cfg(target_os = "linux")]
@@ -70,7 +70,7 @@ pub mod clipboard {
 
     use crate::{error::Error, global_memory::GlobalMemory, win_clipboard::WinClipboard};
 
-    use super::{Clip, ClipboardFormat};
+    use super::{Clip, Clipboard, ClipboardFormat};
 
     impl Clipboard {
         fn create_instance_by(format: &ClipboardFormat) -> WinClipboard {

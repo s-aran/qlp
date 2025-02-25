@@ -195,9 +195,9 @@ fn print_table(table: &mlua::Table, indent: u32) {
 mod tests {
     use mlua::Table;
 
+    use crate::clip::Clip;
     #[cfg(target_os = "windows")]
-    use crate::clip::clipboard::Clipboard;
-    use crate::clip::{Clip, Clipboard};
+    use crate::clip::Clipboard;
 
     use super::*;
 
