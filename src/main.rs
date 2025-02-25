@@ -5,6 +5,7 @@ mod error;
 #[cfg(target_os = "windows")]
 mod global_memory;
 mod html;
+mod utils;
 #[cfg(target_os = "windows")]
 mod win_clipboard;
 
