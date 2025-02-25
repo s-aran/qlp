@@ -2,14 +2,16 @@ mod builtin;
 mod builtins;
 mod clip;
 mod error;
+#[cfg(target_os = "windows")]
 mod global_memory;
 mod html;
+#[cfg(target_os = "windows")]
 mod win_clipboard;
 
 use std::{fs::read_to_string, io::Read, path::PathBuf};
 
 use clap::Parser;
-use clip::{Clip, ClipboardFormat, clipboard::Clipboard};
+use clip::{Clip, Clipboard, ClipboardFormat};
 use html::{parse_html, rc_dom_to_lua_table};
 
 #[derive(Debug, Parser, Clone)]

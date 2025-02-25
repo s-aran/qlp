@@ -22,6 +22,8 @@ impl Default for ClipboardFormat {
     }
 }
 
+pub struct Clipboard {}
+
 pub trait Clip {
     fn new() -> Self;
 
@@ -29,8 +31,40 @@ pub trait Clip {
 
     fn get_data(&mut self, format: &ClipboardFormat) -> Result<ClipboardFormat, Error>;
     fn set_data(&mut self, data: &ClipboardFormat) -> Result<(), Error>;
+
+    fn get_html<T>(data: &T) -> String;
 }
 
+#[cfg(target_os = "linux")]
+pub mod clipboard {
+    use crate::error::Error;
+
+    use super::{Clip, Clipboard, ClipboardFormat};
+
+    impl Clip for Clipboard {
+        fn new() -> Self {
+            Self {}
+        }
+
+        fn get_data(&mut self, format: &ClipboardFormat) -> Result<ClipboardFormat, Error> {
+            Ok(ClipboardFormat::Text("".to_owned()))
+        }
+
+        fn set_data(&mut self, data: &ClipboardFormat) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn get_html<T>(data: &T) -> String {
+            String::default()
+        }
+
+        fn determine_format(&self) -> Result<ClipboardFormat, Error> {
+            Ok(ClipboardFormat::Text("".to_owned()))
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
 pub mod clipboard {
     use regex::Regex;
 
@@ -38,14 +72,13 @@ pub mod clipboard {
 
     use super::{Clip, ClipboardFormat};
 
-    pub struct Clipboard {}
-
     impl Clipboard {
         fn create_instance_by(format: &ClipboardFormat) -> WinClipboard {
             match format {
                 ClipboardFormat::Text(_) => WinClipboard::new_with_unicode_text(),
                 ClipboardFormat::Html(_) => {
-                    WinClipboard::new(windows::Win32::System::Ole::CLIPBOARD_FORMAT(49530)) // TODO: CF_HTML
+                    WinClipboard::new(windows::Win32::System::Ole::CLIPBOARD_FORMAT(49530))
+                    // TODO: CF_HTML
                 }
             }
         }
@@ -76,66 +109,6 @@ pub mod clipboard {
         //         ClipboardFormat::Html(s) => s.encode_utf16().collect(),
         //     }
         // }
-
-        pub fn get_html<T>(data: &T) -> String
-        where
-            T: ToString,
-        {
-            const RE_VERSION_PATTERN: &'static str = r"^Version:([0-9\.]+)$";
-            const RE_START_HTML_PATTERN: &'static str = r"^StartHTML:([0-9]+)$";
-            const RE_END_HTML_PATTERN: &'static str = r"^EndHTML:([0-9]+)$";
-            const RE_START_FRAGMENT_PATTERN: &'static str = r"^StartFragment:([0-9]+)$";
-            const RE_END_FRAGMENT_PATTERN: &'static str = r"^EndFragment:([0-9]+)$";
-
-            let re_version = Regex::new(RE_VERSION_PATTERN).unwrap();
-            let re_start_html = Regex::new(RE_START_HTML_PATTERN).unwrap();
-            let re_end_html = Regex::new(RE_END_HTML_PATTERN).unwrap();
-            let re_start_fragment = Regex::new(RE_START_FRAGMENT_PATTERN).unwrap();
-            let re_end_fragment = Regex::new(RE_END_FRAGMENT_PATTERN).unwrap();
-
-            let mut matched_count = 0;
-            let mut html_lines = vec![];
-
-            for raw_line in data.to_string().lines() {
-                let line = raw_line.trim();
-                if line.is_empty() {
-                    continue;
-                }
-
-                if re_version.is_match(line) {
-                    matched_count += 1;
-                    continue;
-                }
-
-                if re_start_html.is_match(line) {
-                    matched_count += 1;
-                    continue;
-                }
-
-                if re_end_html.is_match(line) {
-                    matched_count += 1;
-                    continue;
-                }
-
-                if re_start_fragment.is_match(line) {
-                    matched_count += 1;
-                    continue;
-                }
-
-                if re_end_fragment.is_match(line) {
-                    matched_count += 1;
-                    continue;
-                }
-
-                if matched_count < 5 {
-                    continue;
-                }
-
-                html_lines.push(line.to_owned());
-            }
-
-            html_lines.join("\n")
-        }
     }
 
     impl Clip for Clipboard {
@@ -200,6 +173,66 @@ pub mod clipboard {
             }
 
             Ok(instance.set_clipboard_data(mem.get_global())?)
+        }
+
+        fn get_html<T>(data: &T) -> String
+        where
+            T: ToString,
+        {
+            const RE_VERSION_PATTERN: &'static str = r"^Version:([0-9\.]+)$";
+            const RE_START_HTML_PATTERN: &'static str = r"^StartHTML:([0-9]+)$";
+            const RE_END_HTML_PATTERN: &'static str = r"^EndHTML:([0-9]+)$";
+            const RE_START_FRAGMENT_PATTERN: &'static str = r"^StartFragment:([0-9]+)$";
+            const RE_END_FRAGMENT_PATTERN: &'static str = r"^EndFragment:([0-9]+)$";
+
+            let re_version = Regex::new(RE_VERSION_PATTERN).unwrap();
+            let re_start_html = Regex::new(RE_START_HTML_PATTERN).unwrap();
+            let re_end_html = Regex::new(RE_END_HTML_PATTERN).unwrap();
+            let re_start_fragment = Regex::new(RE_START_FRAGMENT_PATTERN).unwrap();
+            let re_end_fragment = Regex::new(RE_END_FRAGMENT_PATTERN).unwrap();
+
+            let mut matched_count = 0;
+            let mut html_lines = vec![];
+
+            for raw_line in data.to_string().lines() {
+                let line = raw_line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+
+                if re_version.is_match(line) {
+                    matched_count += 1;
+                    continue;
+                }
+
+                if re_start_html.is_match(line) {
+                    matched_count += 1;
+                    continue;
+                }
+
+                if re_end_html.is_match(line) {
+                    matched_count += 1;
+                    continue;
+                }
+
+                if re_start_fragment.is_match(line) {
+                    matched_count += 1;
+                    continue;
+                }
+
+                if re_end_fragment.is_match(line) {
+                    matched_count += 1;
+                    continue;
+                }
+
+                if matched_count < 5 {
+                    continue;
+                }
+
+                html_lines.push(line.to_owned());
+            }
+
+            html_lines.join("\n")
         }
 
         fn determine_format(&self) -> Result<ClipboardFormat, Error> {
