@@ -31,6 +31,35 @@ impl WinClipboard {
         }
     }
 
+    pub fn new_wth_html_text() -> Self {
+        static HTML_FORMAT: &str = "HTML Format";
+
+        let mut initial = WinClipboard::new_with_unicode_text();
+        if initial.open().is_err() {
+            panic!("Failed to open clipboard");
+        }
+
+        let formats = initial.enumerate();
+        let formats = formats
+            .iter()
+            .filter(|cf| {
+                initial
+                    .resolve_clipboard_format_name(cf)
+                    .unwrap_or(String::default())
+                    == HTML_FORMAT
+            })
+            .collect::<Vec<_>>();
+
+        if formats.len() <= 0 {
+            panic!("HTML Format not found");
+        }
+
+        WinClipboard {
+            opened: false,
+            clipboard_format: *formats[0],
+        }
+    }
+
     pub fn type_of(&self) -> bool {
         unsafe { IsClipboardFormatAvailable(self.clipboard_format.0.into()).is_ok() }
     }

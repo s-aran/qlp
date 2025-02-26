@@ -76,10 +76,7 @@ pub mod clipboard {
         fn create_instance_by(format: &ClipboardFormat) -> WinClipboard {
             match format {
                 ClipboardFormat::Text(_) => WinClipboard::new_with_unicode_text(),
-                ClipboardFormat::Html(_) => {
-                    WinClipboard::new(windows::Win32::System::Ole::CLIPBOARD_FORMAT(49530))
-                    // TODO: CF_HTML
-                }
+                ClipboardFormat::Html(_) => WinClipboard::new_wth_html_text(),
             }
         }
 
@@ -117,7 +114,7 @@ pub mod clipboard {
         }
 
         fn get_data(&mut self, format: &ClipboardFormat) -> Result<ClipboardFormat, Error> {
-            let mut instance = Clipboard::create_instance_by(format);
+            let mut instance = Clipboard::create_instance_by(&self.determine_format().unwrap());
             if !instance.type_of() {
                 return Err(Error::new("Clipboard format not available"));
             }
@@ -236,7 +233,7 @@ pub mod clipboard {
         }
 
         fn determine_format(&self) -> Result<ClipboardFormat, Error> {
-            let mut instance = Clipboard::create_instance_by(&ClipboardFormat::default());
+            let mut instance = WinClipboard::new_with_unicode_text();
             instance.open()?;
 
             let formats = instance.enumerate();
