@@ -33,3 +33,16 @@ markup5ever_rcdom = { git = "https://github.com/servo/html5ever.git", branch = "
 xml5ever = { git = "https://github.com/servo/html5ever.git", branch = "main" }
 clap = { version = "4.5", features = ["derive"] }
 chitose = { version = "0.1", git = "https://github.com/s-aran/chitose.git", branch = "main", optional = true }
+
+[profile.release]
+opt-level = 3
+debug = false
+rpath = false
+lto = true
+debug-assertions = false
+codegen-units = 1
+strip = true
+panic = 'abort'
+incremental = false
+overflow-checks = false
+
