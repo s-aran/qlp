@@ -19,3 +19,11 @@ pub fn init(lua: &Lua) -> mlua::Result<()> {
 
     Ok(())
 }
+
+pub fn get_engine_version(lua: &Lua) -> u32 {
+    lua.globals().get::<u32>("ENGINE_VERSION").unwrap_or(0)
+}
+
+pub fn set_engine_version(lua: &Lua, version: u32) {
+    //
+}
