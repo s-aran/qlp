@@ -197,24 +197,15 @@ fn print_table(table: &mlua::Table, indent: u32) {
 mod tests {
     use mlua::Table;
 
-    use crate::clip::Clip;
-    use crate::clip::Clipboard;
-
     use super::*;
 
     #[test]
     fn test_parse_html() {
-        let clipboard = r#"Version:0.9
-StartHTML:0000000105
-EndHTML:0000001269
-StartFragment:0000000141
-EndFragment:0000001233
-<html>
+        let html = r#"<html>
 <body>
 <!--StartFragment--><google-sheets-html-origin><style type="text/css"><!--td {border: 1px solid #cccccc;}br {mso-data-placement:same-cell;}--></style><table xmlns="http://www.w3.org/1999/xhtml" cellspacing="0" cellpadding="0" dir="ltr" border="1" style="table-layout:fixed;font-size:10pt;font-family:Arial;width:0px;border-collapse:collapse;border:none" data-sheets-root="1" data-sheets-baot="1"><colgroup><col width="100"/><col width="100"/><col width="100"/></colgroup><tbody><tr style="height:21px;"><td style="border-top:1px solid #000000;border-right:1px solid #000000;border-bottom:1px solid #000000;border-left:1px solid #000000;overflow:hidden;padding:2px 3px 2px 3px;vertical-align:bottom;">aa</td><td style="border-top:1px solid #000000;border-right:1px solid #000000;border-bottom:1px solid #000000;overflow:hidden;padding:2px 3px 2px 3px;vertical-align:bottom;font-weight:bold;">bb</td><td style="overflow:hidden;padding:2px 3px 2px 3px;vertical-align:bottom;text-decoration:underline;color:#1155cc;"><a class="in-cell-link" href="https://google.com/" target="_blank">cc</a></td></tr></tbody></table><!--EndFragment-->
 </body>
 </html>"#;
-        let html = Clipboard::get_html(&clipboard);
 
         let dom = parse_html(&html.to_string());
         assert_eq!(dom.document.children.borrow().len(), 1);
@@ -254,17 +245,11 @@ EndFragment:0000001233
 
     #[test]
     fn test_parse_html2() {
-        let clipboard = r#"Version:0.9
-StartHTML:0000000105
-EndHTML:0000001485
-StartFragment:0000000141
-EndFragment:0000001449
-<html>
+        let html = r#"<html>
 <body>
 <!--StartFragment--><google-sheets-html-origin><style type="text/css"><!--td {border: 1px solid #cccccc;}br {mso-data-placement:same-cell;}--></style><table xmlns="http://www.w3.org/1999/xhtml" cellspacing="0" cellpadding="0" dir="ltr" border="1" style="table-layout:fixed;font-size:10pt;font-family:Arial;width:0px;border-collapse:collapse;border:none" data-sheets-root="1" data-sheets-baot="1"><colgroup><col width="100"/><col width="100"/></colgroup><tbody><tr style="height:21px;"><td style="border-left:1px solid #000000;overflow:hidden;padding:2px 3px 2px 3px;vertical-align:bottom;text-decoration:underline;color:#1155cc;"><a class="in-cell-link" href="https://google.com/" target="_blank">うう</a></td><td style="border-right:1px solid transparent;overflow:visible;padding:2px 0px 2px 0px;vertical-align:bottom;"><div style="white-space:nowrap;overflow:hidden;position:relative;width:297px;left:3px;"><div style="float:left;"><span style="font-size:10pt;font-family:Arial;font-style:normal;text-decoration:underline;text-decoration-skip-ink:none;-webkit-text-decoration-skip:none;color:#1155cc;"><a class="in-cell-link" target="_blank" href="https://example.com/">Example Domain</a></span><span style="font-size:10pt;font-family:Arial;font-style:normal;">tps://example.com/</span></div></div></td></tr></tbody></table><!--EndFragment-->
 </body>
 </html>"#;
-        let html = Clipboard::get_html(&clipboard);
 
         let dom = parse_html(&html.to_string());
         assert_eq!(dom.document.children.borrow().len(), 1);
@@ -295,6 +280,45 @@ EndFragment:0000001449
 
         // assert cell 2
         let actual_cells = &actual_rows.get::<Table>(2).unwrap();
+        assert_eq!(
+            "Example Domaintps://example.com/",
+            actual_cells.get::<String>("text").unwrap()
+        );
+        assert_eq!(
+            "https://example.com/",
+            actual_cells.get::<String>("href").unwrap()
+        );
+    }
+
+    #[test]
+    fn test_parse_html3() {
+        let html = r#"<html>
+<body>
+<!--StartFragment--><style type="text/css"><!--td {border: 1px solid #cccccc;}br {mso-data-placement:same-cell;}--></style><span style="font-size:10pt;font-family:Arial;font-style:normal;" data-sheets-root="1"><span style="font-size:10pt;font-family:Arial;font-style:normal;text-decoration:underline;text-decoration-skip-ink:none;-webkit-text-decoration-skip:none;color:#1155cc;"><a class="in-cell-link" target="_blank" href="https://example.com/">Example Domain</a></span><span style="font-size:10pt;font-family:Arial;font-style:normal;">tps://example.com/</span></span><!--EndFragment-->
+</body>
+</html"#;
+
+        let dom = parse_html(&html.to_string());
+        assert_eq!(dom.document.children.borrow().len(), 1);
+
+        println!("{:?}", dom.document);
+        println!("--------------------");
+
+        let lua = mlua::Lua::new();
+
+        let table = rc_dom_to_lua_table(&lua, dom);
+        print_table(&table, 0);
+
+        // assert table length
+        let actual_table = table;
+        assert_eq!(1, actual_table.len().unwrap());
+
+        // assert row length
+        let actual_rows = &actual_table.get::<Table>(1).unwrap();
+        assert_eq!(2, actual_rows.len().unwrap());
+
+        // assert cell 1
+        let actual_cells = &actual_rows.get::<Table>(1).unwrap();
         assert_eq!(
             "Example Domaintps://example.com/",
             actual_cells.get::<String>("text").unwrap()
