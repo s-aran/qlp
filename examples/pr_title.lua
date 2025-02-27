@@ -14,5 +14,5 @@ local table = json_to_table(result.stdout)
 
 -- print("[" .. table.title .. "](" .. table.url .. ")")
 
-qlp.result = "[" .. table.title .. "](" .. table.url .. ")"
+qlp.result = "[" .. table.title .. "](" .. table.html_url .. ")"
 
