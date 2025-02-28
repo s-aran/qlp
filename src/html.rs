@@ -1,18 +1,28 @@
 use std::io::Cursor;
 
-use html5ever::parse_document;
-use markup5ever_rcdom::{Handle, NodeData, RcDom};
+use html5ever::{
+    parse_document,
+    serialize::{self},
+    tree_builder::TreeBuilderOpts,
+    Attribute, ParseOpts,
+};
+
+use markup5ever::{interface::TreeSink, local_name, namespace_url, ns, QualName};
+use markup5ever_rcdom::{Handle, Node, NodeData, RcDom, SerializableHandle};
+
 use xml5ever::tendril::TendrilSink;
 
 #[derive(Debug)]
 struct Working {
     table_stack: Vec<Handle>,
+    body_topnode: Option<Handle>,
 }
 
 impl Default for Working {
     fn default() -> Self {
         Self {
             table_stack: Default::default(),
+            body_topnode: Default::default(),
         }
     }
 }
@@ -46,6 +56,10 @@ fn walk(handle: &Handle, working: &mut Working) {
 
     let children = handle.children.borrow();
     for child in children.iter() {
+        if working.body_topnode.is_none() {
+            working.body_topnode = Some(child.clone());
+        }
+
         walk(child, working);
     }
 }
@@ -143,6 +157,20 @@ pub fn rc_dom_to_lua_table(lua: &mlua::Lua, dom: RcDom) -> mlua::Table {
 
     let table = lua.create_table().unwrap();
 
+    if working.table_stack.len() <= 0 {
+        let cell = working.body_topnode.unwrap();
+        let row_table = lua.create_table().unwrap();
+        let data_table = lua.create_table().unwrap();
+        data_table.set("text", get_text(&cell)).unwrap();
+        if let Some(href) = get_anchor_href(&cell) {
+            data_table.set("href", href).unwrap();
+        }
+
+        // lua to start arrays with index 1
+        row_table.set(1, data_table).unwrap();
+        table.set(1, row_table).unwrap();
+    }
+
     while working.table_stack.len() > 0 {
         let table_handle = working.table_stack.pop().unwrap();
         for (row_i, row) in get_rows(&table_handle).iter().enumerate() {
@@ -190,6 +218,99 @@ fn print_table(table: &mlua::Table, indent: u32) {
             println!("{:?}: {:?}", key, value);
         }
     }
+}
+
+fn create_table() -> Handle {
+    Node::new(NodeData::Element {
+        name: QualName::new(None, ns!(html), local_name!("table")),
+        attrs: vec![].into(),
+        template_contents: None.into(),
+        mathml_annotation_xml_integration_point: false,
+    })
+}
+
+fn create_tr() -> Handle {
+    Node::new(NodeData::Element {
+        name: QualName::new(None, ns!(html), local_name!("tr")),
+        attrs: vec![].into(),
+        template_contents: None.into(),
+        mathml_annotation_xml_integration_point: false,
+    })
+}
+
+fn create_td() -> Handle {
+    Node::new(NodeData::Element {
+        name: QualName::new(None, ns!(html), local_name!("td")),
+        attrs: vec![].into(),
+        template_contents: None.into(),
+        mathml_annotation_xml_integration_point: false,
+    })
+}
+
+fn create_a(href: String) -> Handle {
+    Node::new(NodeData::Element {
+        name: QualName::new(None, ns!(html), local_name!("a")),
+        attrs: vec![Attribute {
+            name: QualName::new(None, ns!(), local_name!("href")),
+            value: href.into(),
+        }]
+        .into(),
+        template_contents: None.into(),
+        mathml_annotation_xml_integration_point: false,
+    })
+}
+
+fn create_text(text: String) -> Handle {
+    Node::new(NodeData::Text {
+        name: QualName::new(None, ns!(html), local_name!("td")),
+        attrs: vec![].into(),
+        template_contents: None.into(),
+        mathml_annotation_xml_integration_point: false,
+    })
+}
+
+fn create_ul() -> Handle {
+    Node::new(NodeData::Element {
+        name: QualName::new(None, ns!(html), local_name!("ul")),
+        attrs: vec![].into(),
+        template_contents: None.into(),
+        mathml_annotation_xml_integration_point: false,
+    })
+}
+
+fn create_ol() -> Handle {
+    Node::new(NodeData::Element {
+        name: QualName::new(None, ns!(html), local_name!("ol")),
+        attrs: vec![].into(),
+        template_contents: None.into(),
+        mathml_annotation_xml_integration_point: false,
+    })
+}
+
+fn create_li() -> Handle {
+    Node::new(NodeData::Element {
+        name: QualName::new(None, ns!(html), local_name!("li")),
+        attrs: vec![].into(),
+        template_contents: None.into(),
+        mathml_annotation_xml_integration_point: false,
+    })
+}
+
+pub fn lua_table_to_html_table(lua: &Lua, value: &Table) -> Handle {
+    let mut table = create_table();
+
+    match value {
+        Value::Nil => Ok(""),
+        Value::Boolean(b) => Ok(JsonValue::Bool(b)),
+        Value::Integer(i) => Ok(JsonValue::Number(i.into())),
+        Value::Number(n) => Ok(JsonValue::Number(
+            serde_json::Number::from_f64(n)
+                .ok_or_else(|| mlua::Error::RuntimeError("Invalid number".into()))?,
+        )),
+        Value::String(s) => Ok(JsonValue::String(s.to_str()?.to_string())),
+    };
+
+    return table;
 }
 
 // test
