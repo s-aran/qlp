@@ -1,18 +1,26 @@
 use std::io::Cursor;
 
-use html5ever::parse_document;
-use markup5ever_rcdom::{Handle, NodeData, RcDom};
-use xml5ever::tendril::TendrilSink;
+use html5ever::{
+    Attribute, parse_document,
+    serialize::{HtmlSerializer, Serialize, SerializeOpts, TraversalScope},
+};
+use markup5ever::{QualName, local_name, namespace_url, ns};
+use markup5ever_rcdom::{Handle, Node, NodeData, RcDom, SerializableHandle};
+
+use mlua::{Lua, Table, Value};
+use xml5ever::tendril::{Tendril, TendrilSink};
 
 #[derive(Debug)]
 struct Working {
     table_stack: Vec<Handle>,
+    body_topnode: Option<Handle>,
 }
 
 impl Default for Working {
     fn default() -> Self {
         Self {
             table_stack: Default::default(),
+            body_topnode: Default::default(),
         }
     }
 }
@@ -46,6 +54,10 @@ fn walk(handle: &Handle, working: &mut Working) {
 
     let children = handle.children.borrow();
     for child in children.iter() {
+        if working.body_topnode.is_none() {
+            working.body_topnode = Some(child.clone());
+        }
+
         walk(child, working);
     }
 }
@@ -143,6 +155,20 @@ pub fn rc_dom_to_lua_table(lua: &mlua::Lua, dom: RcDom) -> mlua::Table {
 
     let table = lua.create_table().unwrap();
 
+    if working.table_stack.len() <= 0 {
+        let cell = working.body_topnode.unwrap();
+        let row_table = lua.create_table().unwrap();
+        let data_table = lua.create_table().unwrap();
+        data_table.set("text", get_text(&cell)).unwrap();
+        if let Some(href) = get_anchor_href(&cell) {
+            data_table.set("href", href).unwrap();
+        }
+
+        // lua to start arrays with index 1
+        row_table.set(1, data_table).unwrap();
+        table.set(1, row_table).unwrap();
+    }
+
     while working.table_stack.len() > 0 {
         let table_handle = working.table_stack.pop().unwrap();
         for (row_i, row) in get_rows(&table_handle).iter().enumerate() {
@@ -150,8 +176,8 @@ pub fn rc_dom_to_lua_table(lua: &mlua::Lua, dom: RcDom) -> mlua::Table {
 
             for (column_n, cell) in get_data(&row).iter().enumerate() {
                 // Table
-                //   +-- row_n : ...
-                //   |            +-- column_n: ...
+                //   +-- row_n : (table)
+                //   |            +-- column_n: (table)
                 //   |            |              +-- (if anchor) href: url
                 //   |            |              `-- text: text
                 //   |            +-- :
@@ -192,7 +218,200 @@ fn print_table(table: &mlua::Table, indent: u32) {
     }
 }
 
-// test
+fn create_html() -> Handle {
+    Node::new(NodeData::Element {
+        name: QualName::new(None, ns!(html), local_name!("html")),
+        attrs: vec![].into(),
+        template_contents: None.into(),
+        mathml_annotation_xml_integration_point: false,
+    })
+}
+
+fn create_body() -> Handle {
+    Node::new(NodeData::Element {
+        name: QualName::new(None, ns!(html), local_name!("body")),
+        attrs: vec![].into(),
+        template_contents: None.into(),
+        mathml_annotation_xml_integration_point: false,
+    })
+}
+
+fn create_meta<T>(key: T, value: T) -> Handle
+where
+    T: ToString,
+{
+    Node::new(NodeData::Element {
+        name: QualName::new(None, ns!(html), local_name!("meta")),
+        attrs: vec![Attribute {
+            name: QualName::new(None, ns!(), key.to_string().into()),
+            value: value.to_string().into(),
+        }]
+        .into(),
+        template_contents: None.into(),
+        mathml_annotation_xml_integration_point: false,
+    })
+}
+
+fn create_comment<T>(text: T) -> Handle
+where
+    T: ToString,
+{
+    Node::new(NodeData::Comment {
+        contents: text.to_string().into(),
+    })
+}
+
+fn create_table() -> Handle {
+    Node::new(NodeData::Element {
+        name: QualName::new(None, ns!(html), local_name!("table")),
+        attrs: vec![].into(),
+        template_contents: None.into(),
+        mathml_annotation_xml_integration_point: false,
+    })
+}
+
+fn create_tr() -> Handle {
+    Node::new(NodeData::Element {
+        name: QualName::new(None, ns!(html), local_name!("tr")),
+        attrs: vec![].into(),
+        template_contents: None.into(),
+        mathml_annotation_xml_integration_point: false,
+    })
+}
+
+fn create_td() -> Handle {
+    Node::new(NodeData::Element {
+        name: QualName::new(None, ns!(html), local_name!("td")),
+        attrs: vec![].into(),
+        template_contents: None.into(),
+        mathml_annotation_xml_integration_point: false,
+    })
+}
+
+fn create_a(href: String) -> Handle {
+    Node::new(NodeData::Element {
+        name: QualName::new(None, ns!(html), local_name!("a")),
+        attrs: vec![Attribute {
+            name: QualName::new(None, ns!(), local_name!("href")),
+            value: href.into(),
+        }]
+        .into(),
+        template_contents: None.into(),
+        mathml_annotation_xml_integration_point: false,
+    })
+}
+
+fn create_text<T>(text: T) -> Handle
+where
+    T: ToString,
+{
+    Node::new(NodeData::Text {
+        contents: Tendril::from(text.to_string()).into(),
+    })
+}
+
+fn create_ul() -> Handle {
+    Node::new(NodeData::Element {
+        name: QualName::new(None, ns!(html), local_name!("ul")),
+        attrs: vec![].into(),
+        template_contents: None.into(),
+        mathml_annotation_xml_integration_point: false,
+    })
+}
+
+fn create_ol() -> Handle {
+    Node::new(NodeData::Element {
+        name: QualName::new(None, ns!(html), local_name!("ol")),
+        attrs: vec![].into(),
+        template_contents: None.into(),
+        mathml_annotation_xml_integration_point: false,
+    })
+}
+
+fn create_li() -> Handle {
+    Node::new(NodeData::Element {
+        name: QualName::new(None, ns!(html), local_name!("li")),
+        attrs: vec![].into(),
+        template_contents: None.into(),
+        mathml_annotation_xml_integration_point: false,
+    })
+}
+
+pub fn lua_table_to_html_table(_: &Lua, value: &Table) -> Handle {
+    let table = create_table();
+
+    for row_kv in value.pairs::<Value, Value>() {
+        let (row_key, row_value) = row_kv.unwrap();
+        let row_table = row_value.as_table().unwrap();
+
+        let tr = create_tr();
+
+        for cell_kv in row_table.pairs::<Value, Value>() {
+            let (column_key, column_value) = cell_kv.unwrap();
+            println!("{:?} {:?}", column_key, column_value);
+            let column_table = column_value.as_table().unwrap();
+
+            let td = create_td();
+
+            let text = column_table.get::<String>("text").unwrap();
+            let href = column_table.get::<String>("href");
+
+            if href.is_ok() {
+                let a = create_a(href.unwrap());
+                a.children.borrow_mut().push(create_text(text));
+
+                td.children.borrow_mut().push(a);
+            } else {
+                td.children.borrow_mut().push(create_text(text));
+            }
+
+            tr.children.borrow_mut().push(td);
+        }
+
+        table.children.borrow_mut().push(tr);
+    }
+
+    return table;
+}
+
+pub fn create_html_for_clipboard(content: &Handle) -> Handle {
+    let html = create_html();
+    let body = create_body();
+    let meta_charset = create_meta("charset", "utf-8");
+
+    let comment_start_fragment = create_comment("StartFragment");
+    let comment_end_fragment = create_comment("EndFragment");
+
+    // like Google Chrome
+    let mut content = vec![
+        comment_start_fragment,
+        meta_charset,
+        content.clone(),
+        comment_end_fragment,
+    ];
+
+    body.children.borrow_mut().append(&mut content);
+    html.children.borrow_mut().push(body);
+
+    html
+}
+
+pub fn html_handle_to_string(handle: &Handle) -> String {
+    let mut buf = vec![];
+    let mut serializer = HtmlSerializer::new(
+        &mut buf,
+        SerializeOpts {
+            create_missing_parent: true,
+            ..Default::default()
+        },
+    );
+    let serializable = SerializableHandle::from(handle.clone());
+    serializable
+        .serialize(&mut serializer, TraversalScope::IncludeNode)
+        .unwrap();
+    String::from_utf8(buf).unwrap()
+}
+
 #[cfg(test)]
 mod tests {
     use mlua::Table;
@@ -327,5 +546,53 @@ mod tests {
             "https://example.com/",
             actual_cells.get::<String>("href").unwrap()
         );
+    }
+
+    #[test]
+    fn test_to_html_table() {
+        let lua = mlua::Lua::new();
+
+        let table = lua.create_table().unwrap();
+
+        let row1 = lua.create_table().unwrap();
+        let cell1_1 = lua.create_table().unwrap();
+        cell1_1.set("text", "aa").unwrap();
+
+        row1.set(1, cell1_1).unwrap();
+
+        let row2 = lua.create_table().unwrap();
+        let cell2_1 = lua.create_table().unwrap();
+        cell2_1.set("text", "bb").unwrap();
+
+        row2.set(1, cell2_1).unwrap();
+
+        let row3 = lua.create_table().unwrap();
+        let cell3_1 = lua.create_table().unwrap();
+        cell3_1.set("text", "cc").unwrap();
+        cell3_1.set("href", "https://example.com/").unwrap();
+
+        row3.set(1, cell3_1).unwrap();
+
+        table.set(1, row1).unwrap();
+        table.set(2, row2).unwrap();
+        table.set(3, row3).unwrap();
+
+        let actual_table = lua_table_to_html_table(&lua, &table);
+        let actual_html = create_html_for_clipboard(&actual_table);
+
+        println!("{:?}", actual_html);
+
+        println!("{}", html_handle_to_string(&actual_html));
+
+        assert!(false)
+    }
+
+    #[test]
+    fn test_list() {
+        let html = r#"<html>
+<body>
+<!--StartFragment--><meta charset="utf-8"><b style="font-weight:normal;" id="docs-internal-guid-81b70dd7-7fff-f183-d406-52450c91b0e8"><ul style="margin-top:0;margin-bottom:0;padding-inline-start:48px;"><li dir="ltr" style="list-style-type:disc;font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;font-weight:400;font-style:normal;font-variant:normal;text-decoration:none;vertical-align:baseline;white-space:pre;" aria-level="1"><p dir="ltr" style="line-height:1.38;margin-top:0pt;margin-bottom:0pt;" role="presentation"><span style="font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;font-weight:400;font-style:normal;font-variant:normal;text-decoration:none;vertical-align:baseline;white-space:pre;white-space:pre-wrap;">hoge</span></p></li><ul style="margin-top:0;margin-bottom:0;padding-inline-start:48px;"><li dir="ltr" style="list-style-type:circle;font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;font-weight:400;font-style:normal;font-variant:normal;text-decoration:none;vertical-align:baseline;white-space:pre;" aria-level="2"><p dir="ltr" style="line-height:1.38;margin-top:0pt;margin-bottom:0pt;" role="presentation"><span style="font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;font-weight:400;font-style:normal;font-variant:normal;text-decoration:none;vertical-align:baseline;white-space:pre;white-space:pre-wrap;">piyo</span></p></li><ul style="margin-top:0;margin-bottom:0;padding-inline-start:48px;"><li dir="ltr" style="list-style-type:square;font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;font-weight:400;font-style:normal;font-variant:normal;text-decoration:none;vertical-align:baseline;white-space:pre;" aria-level="3"><p dir="ltr" style="line-height:1.38;margin-top:0pt;margin-bottom:0pt;" role="presentation"><span style="font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;font-weight:400;font-style:normal;font-variant:normal;text-decoration:none;vertical-align:baseline;white-space:pre;white-space:pre-wrap;">fuga</span></p></li></ul><li dir="ltr" style="list-style-type:circle;font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;font-weight:400;font-style:normal;font-variant:normal;text-decoration:none;vertical-align:baseline;white-space:pre;" aria-level="2"><p dir="ltr" style="line-height:1.38;margin-top:0pt;margin-bottom:0pt;" role="presentation"><span style="font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;font-weight:400;font-style:normal;font-variant:normal;text-decoration:none;vertical-align:baseline;white-space:pre;white-space:pre-wrap;">moge</span></p></li></ul><li dir="ltr" style="list-style-type:disc;font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;font-weight:400;font-style:normal;font-variant:normal;text-decoration:none;vertical-align:baseline;white-space:pre;" aria-level="1"><p dir="ltr" style="line-height:1.38;margin-top:0pt;margin-bottom:0pt;" role="presentation"><span style="font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;font-weight:400;font-style:normal;font-variant:normal;text-decoration:none;vertical-align:baseline;white-space:pre;white-space:pre-wrap;">mogera</span></p></li></ul><br /></b><!--EndFragment-->
+</body>
+</html>"#;
     }
 }

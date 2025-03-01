@@ -13,7 +13,11 @@ use std::{fs::read_to_string, io::Read, path::PathBuf};
 
 use clap::Parser;
 use clip::{Clip, Clipboard, ClipboardFormat};
-use html::{parse_html, rc_dom_to_lua_table};
+use html::{
+    create_html_for_clipboard, html_handle_to_string, lua_table_to_html_table, parse_html,
+    rc_dom_to_lua_table,
+};
+use mlua::Value;
 
 #[derive(Debug, Parser, Clone)]
 #[command(author, version, about, long_about = None)]
@@ -95,10 +99,34 @@ fn main() {
 
     // set clipboard
     let current_table = lua.globals().get::<mlua::Table>("qlp").unwrap();
-    match current_table.get::<String>("result") {
-        Ok(text) => {
-            clip.set_data(&ClipboardFormat::Text(text)).unwrap();
-        }
+    match current_table.get::<Value>("result") {
+        Ok(value) => match value {
+            Value::String(s) => clip
+                .set_data(&ClipboardFormat::Text(s.to_string_lossy()))
+                .unwrap(),
+            Value::Nil => {
+                // NOP
+            }
+            Value::Boolean(b) => clip
+                .set_data(&ClipboardFormat::Text(b.to_string()))
+                .unwrap(),
+            Value::Integer(n) => clip
+                .set_data(&ClipboardFormat::Text(n.to_string()))
+                .unwrap(),
+            Value::Number(n) => clip
+                .set_data(&ClipboardFormat::Text(n.to_string()))
+                .unwrap(),
+            Value::Table(t) => {
+                // TODO: list
+                let handle = lua_table_to_html_table(&lua, &t);
+                let html_handle = create_html_for_clipboard(&handle);
+                let html = html_handle_to_string(&html_handle);
+                clip.set_data(&ClipboardFormat::Html(html)).unwrap();
+            }
+            _ => {
+                // NOP
+            }
+        },
         Err(_) => {}
     }
 }

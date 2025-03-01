@@ -97,6 +97,44 @@ pub mod clipboard {
             }
         }
 
+        fn append_clipboard_data<T>(data: &T) -> String
+        where
+            T: ToString,
+        {
+            let binding = data.to_string();
+            let result = vec![
+                "Version:0.9",
+                "StartHTML:0000000000",
+                "EndHTML:0000000000",
+                "StartFragment:0000000000",
+                "EndFragment:0000000000",
+            ];
+
+            let tmp = result.join("\r\n");
+
+            let header_len = tmp.len() + "\r\n".len();
+            // <html><body><!--StartFragment-->
+            let start_offset = (1 + 4 + 1) + (1 + 4 + 1) + (4 + 5 + 8 + 3);
+            // <!--EndFragment--></body></html>
+            let end_offset = (4 + 3 + 8 + 3) + (2 + 4 + 1) + (2 + 4 + 1);
+
+            let start_html = header_len;
+            let end_html = start_html + start_offset + binding.len() + end_offset;
+            let start_fragment = header_len + start_offset;
+            let end_fragment = start_fragment + binding.len();
+
+            let result = vec![
+                format!("Version:{}", "0.9"),
+                format!("StartHTML:{:0>10}", start_html),
+                format!("EndHTML:{:0>10}", end_html),
+                format!("StartFragment:{:0>10}", start_fragment),
+                format!("EndFragment:{:0>10}", end_fragment),
+                binding,
+            ];
+
+            result.join("\r\n")
+        }
+
         // fn encode<T>(data: &ClipboardFormat) -> Vec<T>
         // where
         //     T: Sized,
@@ -142,9 +180,9 @@ pub mod clipboard {
         }
 
         fn set_data(&mut self, data: &ClipboardFormat) -> Result<(), Error> {
-            let src: Vec<u16> = match data {
-                ClipboardFormat::Text(s) => s.encode_utf16().collect(),
-                ClipboardFormat::Html(s) => s.encode_utf16().collect(),
+            let (src_str, char_size) = match data {
+                ClipboardFormat::Text(s) => (s.to_owned(), 16),
+                ClipboardFormat::Html(s) => (Clipboard::append_clipboard_data(s), 8),
             };
 
             let mut instance = Clipboard::create_instance_by(data);
@@ -152,7 +190,7 @@ pub mod clipboard {
             instance.open()?;
             instance.empty()?;
 
-            let global_size = (src.len() + 1) * std::mem::size_of::<u16>();
+            let global_size = (src_str.len() + 1) * char_size;
 
             let mut mem = GlobalMemory::new();
             let ptr = match mem.alloc_without_free(global_size) {
@@ -165,9 +203,20 @@ pub mod clipboard {
                 }
             };
 
-            unsafe {
-                std::ptr::copy(src.as_ptr(), ptr as *mut u16, src.len());
-            }
+            match data {
+                ClipboardFormat::Text(_) => {
+                    let src = src_str.encode_utf16().collect::<Vec<u16>>();
+                    unsafe {
+                        std::ptr::copy(src.as_ptr(), ptr as *mut u16, src.len());
+                    }
+                }
+                ClipboardFormat::Html(_) => {
+                    let src = src_str.into_bytes();
+                    unsafe {
+                        std::ptr::copy(src.as_ptr(), ptr as *mut u8, src.len());
+                    }
+                }
+            };
 
             Ok(instance.set_clipboard_data(mem.get_global())?)
         }
@@ -176,20 +225,16 @@ pub mod clipboard {
         where
             T: ToString,
         {
-            const RE_VERSION_PATTERN: &'static str = r"^Version:([0-9\.]+)$";
+            // const RE_VERSION_PATTERN: &'static str = r"^Version:([0-9\.]+)$";
             const RE_START_HTML_PATTERN: &'static str = r"^StartHTML:([0-9]+)$";
             const RE_END_HTML_PATTERN: &'static str = r"^EndHTML:([0-9]+)$";
-            const RE_START_FRAGMENT_PATTERN: &'static str = r"^StartFragment:([0-9]+)$";
-            const RE_END_FRAGMENT_PATTERN: &'static str = r"^EndFragment:([0-9]+)$";
 
-            let re_version = Regex::new(RE_VERSION_PATTERN).unwrap();
+            // let re_version = Regex::new(RE_VERSION_PATTERN).unwrap();
             let re_start_html = Regex::new(RE_START_HTML_PATTERN).unwrap();
             let re_end_html = Regex::new(RE_END_HTML_PATTERN).unwrap();
-            let re_start_fragment = Regex::new(RE_START_FRAGMENT_PATTERN).unwrap();
-            let re_end_fragment = Regex::new(RE_END_FRAGMENT_PATTERN).unwrap();
 
-            let mut matched_count = 0;
-            let mut html_lines = vec![];
+            let mut start = 0;
+            let mut end = 0;
 
             for raw_line in data.to_string().lines() {
                 let line = raw_line.trim();
@@ -197,39 +242,27 @@ pub mod clipboard {
                     continue;
                 }
 
-                if re_version.is_match(line) {
-                    matched_count += 1;
-                    continue;
-                }
+                if start <= 0 {
+                    start = match re_start_html.captures(line) {
+                        Some(c) => c.get(1).unwrap().as_str().parse::<usize>().unwrap(),
+                        None => {
+                            continue;
+                        }
+                    }
+                };
 
-                if re_start_html.is_match(line) {
-                    matched_count += 1;
-                    continue;
-                }
-
-                if re_end_html.is_match(line) {
-                    matched_count += 1;
-                    continue;
-                }
-
-                if re_start_fragment.is_match(line) {
-                    matched_count += 1;
-                    continue;
-                }
-
-                if re_end_fragment.is_match(line) {
-                    matched_count += 1;
-                    continue;
-                }
-
-                if matched_count < 5 {
-                    continue;
-                }
-
-                html_lines.push(line.to_owned());
+                if end <= 0 {
+                    end = match re_end_html.captures(line) {
+                        Some(c) => c.get(1).unwrap().as_str().parse::<usize>().unwrap(),
+                        None => {
+                            continue;
+                        }
+                    }
+                };
             }
 
-            html_lines.join("\n")
+            let s = data.to_string();
+            String::from(s.get(start..(end - 2)).unwrap())
         }
 
         fn determine_format(&self) -> Result<ClipboardFormat, Error> {
