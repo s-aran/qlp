@@ -1,4 +1,3 @@
-use serde_json::{Map, Value as JsonValue};
 use std::io::Cursor;
 
 use html5ever::{
@@ -10,8 +9,6 @@ use markup5ever_rcdom::{Handle, Node, NodeData, RcDom, SerializableHandle};
 
 use mlua::{Lua, Table, Value};
 use xml5ever::tendril::{Tendril, TendrilSink};
-
-use crate::utils::lua_to_json;
 
 #[derive(Debug)]
 struct Working {
@@ -377,10 +374,11 @@ pub fn lua_table_to_html_table(_: &Lua, value: &Table) -> Handle {
     return table;
 }
 
-fn lua_table_to_li(lua: &Lua, value: &Table) -> Handle {
-    let li = create_li();
+fn lua_table_to_ul(lua: &Lua, value: &Table) -> Handle {
+    let ul = create_ul();
 
     if value.contains_key("text").unwrap() {
+        let li = create_li();
         if value.contains_key("href").unwrap() {
             let a = create_a(value.get::<String>("href").unwrap());
             let text = create_text(value.get::<String>("text").unwrap());
@@ -390,6 +388,7 @@ fn lua_table_to_li(lua: &Lua, value: &Table) -> Handle {
             let text = create_text(value.get::<String>("text").unwrap());
             li.children.borrow_mut().push(text);
         }
+        ul.children.borrow_mut().push(li);
     }
 
     for cell_kv in value.pairs::<Value, Value>() {
@@ -401,34 +400,56 @@ fn lua_table_to_li(lua: &Lua, value: &Table) -> Handle {
 
         let column_table = column_value.as_table().unwrap();
 
-        let ul = create_ul();
-        ul.children
-            .borrow_mut()
-            .push(lua_table_to_li(lua, column_table));
-        // li.children.borrow_mut().push(ul);
-    }
+        let created_ul = lua_table_to_ul(lua, column_table);
+        let children = ul.children.borrow().clone();
+        let found_ul = children.iter().find(|e| {
+            match e.data {
+                NodeData::Element { ref name, .. } => {
+                    if name.local.as_ref() == "ul" {
+                        return true;
+                    }
+                }
+                _ => {
+                    return false;
+                }
+            }
 
-    return li;
-}
+            return false;
+        });
 
-fn json_to_html_list(lua: &Lua, value: &Table) -> Handle {
-    print_table(value, 0);
-    println!("--------------------------------------------------------------------------------");
-
-    let ul = create_ul();
-
-    for row_kv in value.pairs::<Value, Value>() {
-        let (row_key, row_value) = row_kv.unwrap();
-
-        let li = lua_table_to_li(lua, row_value.as_table().unwrap());
-        ul.children.borrow_mut().push(li);
+        if found_ul.is_some() {
+            let mut ul_children = found_ul.unwrap().children.borrow_mut();
+            ul_children.append(&mut created_ul.children.borrow_mut());
+        } else {
+            ul.children.borrow_mut().push(created_ul);
+        }
     }
 
     return ul;
 }
 
 pub fn lua_table_to_html_list(lua: &Lua, value: &Table) -> Handle {
-    json_to_html_list(lua, &value)
+    print_table(value, 0);
+    println!("--------------------------------------------------------------------------------");
+
+    let mut result: Option<Handle> = None;
+
+    for row_kv in value.pairs::<Value, Value>() {
+        let (row_key, row_value) = row_kv.unwrap();
+        if result.is_some() {
+            let ul = Some(lua_table_to_ul(lua, row_value.as_table().unwrap()));
+            result
+                .clone()
+                .unwrap()
+                .children
+                .borrow_mut()
+                .append(&mut ul.unwrap().children.borrow_mut());
+        } else {
+            result = Some(lua_table_to_ul(lua, row_value.as_table().unwrap()));
+        }
+    }
+
+    return result.unwrap();
 }
 
 pub fn create_html_for_clipboard(contents: Vec<Handle>) -> Handle {
@@ -470,7 +491,6 @@ pub fn html_handle_to_string(handle: &Handle) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::ptr::eq;
 
     use mlua::Table;
 
@@ -691,11 +711,7 @@ mod tests {
 
         // let actual_html = merge_ul(lua_table_to_html_list(&lua, &table));
         let actual_html = lua_table_to_html_list(&lua, &table);
-        let actual = actual_html
-            .iter()
-            .map(|e| html_handle_to_string(e))
-            .collect::<Vec<String>>()
-            .join("");
+        let actual = html_handle_to_string(&actual_html);
         println!("{:?}", actual);
 
         let expected = "<ul><li>foo</li><ul><li>aa</li><li>cc</li></ul><li>bar</li><ul><li>bb</li><li>dd</li></ul></ul>";
