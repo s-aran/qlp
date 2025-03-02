@@ -431,7 +431,7 @@ pub fn lua_table_to_html_list(lua: &Lua, value: &Table) -> Handle {
     json_to_html_list(lua, &value)
 }
 
-pub fn create_html_for_clipboard(content: &Handle) -> Handle {
+pub fn create_html_for_clipboard(contents: Vec<Handle>) -> Handle {
     let html = create_html();
     let body = create_body();
     let meta_charset = create_meta("charset", "utf-8");
@@ -440,12 +440,11 @@ pub fn create_html_for_clipboard(content: &Handle) -> Handle {
     let comment_end_fragment = create_comment("EndFragment");
 
     // like Google Chrome
-    let mut content = vec![
-        comment_start_fragment,
-        meta_charset,
-        content.clone(),
-        comment_end_fragment,
-    ];
+    let mut content = vec![];
+    content.push(comment_start_fragment);
+    content.push(meta_charset);
+    content.extend(contents);
+    content.push(comment_end_fragment);
 
     body.children.borrow_mut().append(&mut content);
     html.children.borrow_mut().push(body);
@@ -637,7 +636,7 @@ mod tests {
         table.set(3, row3).unwrap();
 
         let actual_table = lua_table_to_html_table(&lua, &table);
-        let actual_html = create_html_for_clipboard(&actual_table);
+        let actual_html = create_html_for_clipboard(vec![actual_table]);
 
         println!("{:?}", actual_html);
 
@@ -690,12 +689,17 @@ mod tests {
         table.set(1, row1).unwrap();
         table.set(2, row2).unwrap();
 
-        let actual = lua_table_to_html_list(&lua, &table);
-
-        println!("{:?}", html_handle_to_string(&actual));
+        // let actual_html = merge_ul(lua_table_to_html_list(&lua, &table));
+        let actual_html = lua_table_to_html_list(&lua, &table);
+        let actual = actual_html
+            .iter()
+            .map(|e| html_handle_to_string(e))
+            .collect::<Vec<String>>()
+            .join("");
+        println!("{:?}", actual);
 
         let expected = "<ul><li>foo</li><ul><li>aa</li><li>cc</li></ul><li>bar</li><ul><li>bb</li><li>dd</li></ul></ul>";
 
-        assert_eq!(expected, html_handle_to_string(&actual));
+        assert_eq!(expected, actual);
     }
 }
