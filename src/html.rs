@@ -377,10 +377,11 @@ pub fn lua_table_to_html_table(_: &Lua, value: &Table) -> Handle {
     return table;
 }
 
-fn lua_table_to_li(lua: &Lua, value: &Table) -> Handle {
-    let li = create_li();
+fn lua_table_to_ul(lua: &Lua, value: &Table) -> Handle {
+    let ul = create_ul();
 
     if value.contains_key("text").unwrap() {
+        let li = create_li();
         if value.contains_key("href").unwrap() {
             let a = create_a(value.get::<String>("href").unwrap());
             let text = create_text(value.get::<String>("text").unwrap());
@@ -390,6 +391,7 @@ fn lua_table_to_li(lua: &Lua, value: &Table) -> Handle {
             let text = create_text(value.get::<String>("text").unwrap());
             li.children.borrow_mut().push(text);
         }
+        ul.children.borrow_mut().push(li);
     }
 
     for cell_kv in value.pairs::<Value, Value>() {
@@ -401,34 +403,58 @@ fn lua_table_to_li(lua: &Lua, value: &Table) -> Handle {
 
         let column_table = column_value.as_table().unwrap();
 
-        let ul = create_ul();
-        ul.children
-            .borrow_mut()
-            .push(lua_table_to_li(lua, column_table));
-        // li.children.borrow_mut().push(ul);
-    }
+        let created_ul = lua_table_to_ul(lua, column_table);
+        // if ul.children.borrow().binary_search_by_key("ul", |e| {
+        //     println!("bs: {:?}", e);
+        //     Ok(0)
+        // }) {
+        //     //
+        // }
 
-    return li;
-}
+        if ul.children.borrow().len() <= 0 {
+            ul.children.borrow_mut().push(created_ul);
+        } else {
+            let ul_children = ul.children.borrow_mut();
+            let ul_ul = ul_children.last().unwrap();
 
-fn json_to_html_list(lua: &Lua, value: &Table) -> Handle {
-    print_table(value, 0);
-    println!("--------------------------------------------------------------------------------");
+            println!("last: {:?}", ul_ul);
 
-    let ul = create_ul();
-
-    for row_kv in value.pairs::<Value, Value>() {
-        let (row_key, row_value) = row_kv.unwrap();
-
-        let li = lua_table_to_li(lua, row_value.as_table().unwrap());
-        ul.children.borrow_mut().push(li);
+            ul_ul.children.borrow_mut().push(created_ul);
+        }
     }
 
     return ul;
 }
 
-pub fn lua_table_to_html_list(lua: &Lua, value: &Table) -> Handle {
-    json_to_html_list(lua, &value)
+pub fn lua_table_to_html_list(lua: &Lua, value: &Table) -> Vec<Handle> {
+    print_table(value, 0);
+    println!("--------------------------------------------------------------------------------");
+
+    let mut result = Vec::new();
+
+    for row_kv in value.pairs::<Value, Value>() {
+        let (row_key, row_value) = row_kv.unwrap();
+        result.push(lua_table_to_ul(lua, row_value.as_table().unwrap()));
+    }
+
+    return result;
+}
+
+pub fn merge_ul(handles: Vec<Handle>) -> Vec<Handle> {
+    if handles.len() <= 1 {
+        return handles;
+    }
+
+    let first_ul = handles.get(0).unwrap().clone();
+
+    for ul in handles[1..].iter() {
+        first_ul
+            .children
+            .borrow_mut()
+            .append(&mut ul.children.borrow_mut());
+    }
+
+    vec![first_ul]
 }
 
 pub fn create_html_for_clipboard(contents: Vec<Handle>) -> Handle {
