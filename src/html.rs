@@ -1,3 +1,4 @@
+use serde_json::{Map, Value as JsonValue};
 use std::io::Cursor;
 
 use html5ever::{
@@ -9,6 +10,8 @@ use markup5ever_rcdom::{Handle, Node, NodeData, RcDom, SerializableHandle};
 
 use mlua::{Lua, Table, Value};
 use xml5ever::tendril::{Tendril, TendrilSink};
+
+use crate::utils::lua_to_json;
 
 #[derive(Debug)]
 struct Working {
@@ -208,7 +211,7 @@ pub fn rc_dom_to_lua_table(lua: &mlua::Lua, dom: RcDom) -> mlua::Table {
 fn print_table(table: &mlua::Table, indent: u32) {
     for pair in table.pairs::<mlua::Value, mlua::Value>() {
         let (key, value) = pair.unwrap();
-        print!("{:indent$}", " ", indent = (indent * 2) as usize);
+        print!("{:indent$}", " ", indent = (indent * 2 + 1) as usize);
         if value.is_table() {
             println!("{:?}:", key);
             print_table(value.as_table().unwrap(), indent + 1);
@@ -374,7 +377,61 @@ pub fn lua_table_to_html_table(_: &Lua, value: &Table) -> Handle {
     return table;
 }
 
-pub fn create_html_for_clipboard(content: &Handle) -> Handle {
+fn lua_table_to_li(lua: &Lua, value: &Table) -> Handle {
+    let li = create_li();
+
+    if value.contains_key("text").unwrap() {
+        if value.contains_key("href").unwrap() {
+            let a = create_a(value.get::<String>("href").unwrap());
+            let text = create_text(value.get::<String>("text").unwrap());
+            a.children.borrow_mut().push(text);
+            li.children.borrow_mut().push(a);
+        } else {
+            let text = create_text(value.get::<String>("text").unwrap());
+            li.children.borrow_mut().push(text);
+        }
+    }
+
+    for cell_kv in value.pairs::<Value, Value>() {
+        let (column_key, column_value) = cell_kv.unwrap();
+
+        if !column_value.is_table() {
+            continue;
+        }
+
+        let column_table = column_value.as_table().unwrap();
+
+        let ul = create_ul();
+        ul.children
+            .borrow_mut()
+            .push(lua_table_to_li(lua, column_table));
+        // li.children.borrow_mut().push(ul);
+    }
+
+    return li;
+}
+
+fn json_to_html_list(lua: &Lua, value: &Table) -> Handle {
+    print_table(value, 0);
+    println!("--------------------------------------------------------------------------------");
+
+    let ul = create_ul();
+
+    for row_kv in value.pairs::<Value, Value>() {
+        let (row_key, row_value) = row_kv.unwrap();
+
+        let li = lua_table_to_li(lua, row_value.as_table().unwrap());
+        ul.children.borrow_mut().push(li);
+    }
+
+    return ul;
+}
+
+pub fn lua_table_to_html_list(lua: &Lua, value: &Table) -> Handle {
+    json_to_html_list(lua, &value)
+}
+
+pub fn create_html_for_clipboard(contents: Vec<Handle>) -> Handle {
     let html = create_html();
     let body = create_body();
     let meta_charset = create_meta("charset", "utf-8");
@@ -383,12 +440,11 @@ pub fn create_html_for_clipboard(content: &Handle) -> Handle {
     let comment_end_fragment = create_comment("EndFragment");
 
     // like Google Chrome
-    let mut content = vec![
-        comment_start_fragment,
-        meta_charset,
-        content.clone(),
-        comment_end_fragment,
-    ];
+    let mut content = vec![];
+    content.push(comment_start_fragment);
+    content.push(meta_charset);
+    content.extend(contents);
+    content.push(comment_end_fragment);
 
     body.children.borrow_mut().append(&mut content);
     html.children.borrow_mut().push(body);
@@ -414,6 +470,8 @@ pub fn html_handle_to_string(handle: &Handle) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::ptr::eq;
+
     use mlua::Table;
 
     use super::*;
@@ -578,7 +636,7 @@ mod tests {
         table.set(3, row3).unwrap();
 
         let actual_table = lua_table_to_html_table(&lua, &table);
-        let actual_html = create_html_for_clipboard(&actual_table);
+        let actual_html = create_html_for_clipboard(vec![actual_table]);
 
         println!("{:?}", actual_html);
 
@@ -594,5 +652,54 @@ mod tests {
 <!--StartFragment--><meta charset="utf-8"><b style="font-weight:normal;" id="docs-internal-guid-81b70dd7-7fff-f183-d406-52450c91b0e8"><ul style="margin-top:0;margin-bottom:0;padding-inline-start:48px;"><li dir="ltr" style="list-style-type:disc;font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;font-weight:400;font-style:normal;font-variant:normal;text-decoration:none;vertical-align:baseline;white-space:pre;" aria-level="1"><p dir="ltr" style="line-height:1.38;margin-top:0pt;margin-bottom:0pt;" role="presentation"><span style="font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;font-weight:400;font-style:normal;font-variant:normal;text-decoration:none;vertical-align:baseline;white-space:pre;white-space:pre-wrap;">hoge</span></p></li><ul style="margin-top:0;margin-bottom:0;padding-inline-start:48px;"><li dir="ltr" style="list-style-type:circle;font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;font-weight:400;font-style:normal;font-variant:normal;text-decoration:none;vertical-align:baseline;white-space:pre;" aria-level="2"><p dir="ltr" style="line-height:1.38;margin-top:0pt;margin-bottom:0pt;" role="presentation"><span style="font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;font-weight:400;font-style:normal;font-variant:normal;text-decoration:none;vertical-align:baseline;white-space:pre;white-space:pre-wrap;">piyo</span></p></li><ul style="margin-top:0;margin-bottom:0;padding-inline-start:48px;"><li dir="ltr" style="list-style-type:square;font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;font-weight:400;font-style:normal;font-variant:normal;text-decoration:none;vertical-align:baseline;white-space:pre;" aria-level="3"><p dir="ltr" style="line-height:1.38;margin-top:0pt;margin-bottom:0pt;" role="presentation"><span style="font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;font-weight:400;font-style:normal;font-variant:normal;text-decoration:none;vertical-align:baseline;white-space:pre;white-space:pre-wrap;">fuga</span></p></li></ul><li dir="ltr" style="list-style-type:circle;font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;font-weight:400;font-style:normal;font-variant:normal;text-decoration:none;vertical-align:baseline;white-space:pre;" aria-level="2"><p dir="ltr" style="line-height:1.38;margin-top:0pt;margin-bottom:0pt;" role="presentation"><span style="font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;font-weight:400;font-style:normal;font-variant:normal;text-decoration:none;vertical-align:baseline;white-space:pre;white-space:pre-wrap;">moge</span></p></li></ul><li dir="ltr" style="list-style-type:disc;font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;font-weight:400;font-style:normal;font-variant:normal;text-decoration:none;vertical-align:baseline;white-space:pre;" aria-level="1"><p dir="ltr" style="line-height:1.38;margin-top:0pt;margin-bottom:0pt;" role="presentation"><span style="font-size:11pt;font-family:Arial,sans-serif;color:#000000;background-color:transparent;font-weight:400;font-style:normal;font-variant:normal;text-decoration:none;vertical-align:baseline;white-space:pre;white-space:pre-wrap;">mogera</span></p></li></ul><br /></b><!--EndFragment-->
 </body>
 </html>"#;
+    }
+
+    #[test]
+    fn test_list_2() {
+        let lua = mlua::Lua::new();
+
+        let table = lua.create_table().unwrap();
+
+        let row1 = lua.create_table().unwrap();
+        row1.set("text", "foo").unwrap();
+
+        let cell1_1 = lua.create_table().unwrap();
+        cell1_1.set("text", "aa").unwrap();
+
+        row1.set(1, cell1_1).unwrap();
+
+        let cell1_2 = lua.create_table().unwrap();
+        cell1_2.set("text", "cc").unwrap();
+
+        row1.set(2, cell1_2).unwrap();
+
+        let row2 = lua.create_table().unwrap();
+        row2.set("text", "bar").unwrap();
+
+        let cell2_1 = lua.create_table().unwrap();
+        cell2_1.set("text", "bb").unwrap();
+
+        row2.set(1, cell2_1).unwrap();
+
+        let cell2_2 = lua.create_table().unwrap();
+        cell2_2.set("text", "dd").unwrap();
+
+        row2.set(2, cell2_2).unwrap();
+
+        table.set(1, row1).unwrap();
+        table.set(2, row2).unwrap();
+
+        // let actual_html = merge_ul(lua_table_to_html_list(&lua, &table));
+        let actual_html = lua_table_to_html_list(&lua, &table);
+        let actual = actual_html
+            .iter()
+            .map(|e| html_handle_to_string(e))
+            .collect::<Vec<String>>()
+            .join("");
+        println!("{:?}", actual);
+
+        let expected = "<ul><li>foo</li><ul><li>aa</li><li>cc</li></ul><li>bar</li><ul><li>bb</li><li>dd</li></ul></ul>";
+
+        assert_eq!(expected, actual);
     }
 }

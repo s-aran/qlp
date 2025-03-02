@@ -15,7 +15,7 @@ pub fn json_str_to_lua_table(lua: &Lua, json_str: &str) -> Result<Table> {
 }
 
 pub fn lua_table_to_json_str(lua: &Lua, table: Table) -> Result<String> {
-    let json_value = lua_to_json(Value::Table(table))?;
+    let json_value = lua_to_json(lua, Value::Table(table))?;
     serde_json::to_string(&json_value).map_err(|e| mlua::Error::RuntimeError(e.to_string()))
 }
 
@@ -50,7 +50,7 @@ pub fn json_to_lua(lua: &Lua, json: &JsonValue) -> Result<Value> {
     }
 }
 
-pub fn lua_to_json(value: Value) -> Result<JsonValue> {
+pub fn lua_to_json(lua: &Lua, value: Value) -> Result<JsonValue> {
     match value {
         Value::Nil => Ok(JsonValue::Null),
         Value::Boolean(b) => Ok(JsonValue::Bool(b)),
@@ -61,18 +61,18 @@ pub fn lua_to_json(value: Value) -> Result<JsonValue> {
         )),
         Value::String(s) => Ok(JsonValue::String(s.to_str()?.to_string())),
         Value::Table(table) => {
-            if is_array(&table)? {
+            if is_array(lua, &table)? {
                 let mut arr = Vec::new();
                 for pair in table.pairs::<i64, Value>() {
                     let (_, v) = pair?;
-                    arr.push(lua_to_json(v)?);
+                    arr.push(lua_to_json(lua, v)?);
                 }
                 Ok(JsonValue::Array(arr))
             } else {
                 let mut obj = Map::new();
                 for pair in table.pairs::<String, Value>() {
                     let (k, v) = pair?;
-                    obj.insert(k, lua_to_json(v)?);
+                    obj.insert(k, lua_to_json(lua, v)?);
                 }
                 Ok(JsonValue::Object(obj))
             }
@@ -81,7 +81,7 @@ pub fn lua_to_json(value: Value) -> Result<JsonValue> {
     }
 }
 
-fn is_array(table: &Table) -> Result<bool> {
+fn is_array(_: &Lua, table: &Table) -> Result<bool> {
     let mut expected = 1;
     for pair in table.pairs::<Value, Value>() {
         let (k, _) = pair?;
