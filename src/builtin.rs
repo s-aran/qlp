@@ -17,6 +17,11 @@ pub fn init(lua: &Lua) -> mlua::Result<()> {
         let _ = Exec {}.set_function(lua);
     }
 
+    {
+        use crate::builtins::s::ShiftJis;
+        let _ = ShiftJis {}.set_function(lua);
+    }
+
     Ok(())
 }
 
