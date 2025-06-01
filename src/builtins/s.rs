@@ -1,9 +1,14 @@
+//! Shift-JIS string conversion command
+//!
+//! # Example
+//! ```lua
+//! print(s("あいうえお"))  -- あいうえお
+//! ```
+
 use mlua::{Function, Lua};
 
-use encoding_rs;
-use encoding_rs::SHIFT_JIS;
-
 use super::builtin::BuiltinFunction;
+use crate::utils::lua_string_to_shift_jis;
 
 pub struct ShiftJis;
 
@@ -13,11 +18,13 @@ impl BuiltinFunction for ShiftJis {
     }
 
     fn get_function(&self, lua: &Lua) -> Function {
-        lua.create_function(|l: &Lua, string: mlua::String| {
-            let ls = string.to_str().unwrap();
-            let (s, _, _) = SHIFT_JIS.encode(&ls);
-            Ok(l.create_string(&s))
-        })
-        .unwrap()
+        let lua_ref = lua.clone();
+        lua_ref
+            .clone()
+            .create_function(move |l: &Lua, string: mlua::String| {
+                let s = lua_string_to_shift_jis(&l, string);
+                Ok(s.clone())
+            })
+            .unwrap()
     }
 }

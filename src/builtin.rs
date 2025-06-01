@@ -22,11 +22,6 @@ pub fn init(lua: &Lua) -> mlua::Result<()> {
         let _ = ShiftJis {}.set_function(lua);
     }
 
-    {
-        use crate::builtins::include::Include;
-        let _ = Include {}.set_function(lua);
-    }
-
     Ok(())
 }
 
