@@ -14,16 +14,33 @@ use std::{fs::read_to_string, io::Read, path::PathBuf};
 use clap::Parser;
 use clip::{Clip, Clipboard, ClipboardFormat};
 use html::{
-    create_html_for_clipboard, html_handle_to_string, lua_table_to_html_list,
-    lua_table_to_html_table, parse_html, rc_dom_to_lua_table,
+    create_html_for_clipboard, html_handle_to_string, lua_table_to_html_table, parse_html,
+    rc_dom_to_lua_table,
 };
 use mlua::Value;
+
+use crate::error::Error;
 
 #[derive(Debug, Parser, Clone)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     #[arg(help = "FILE")]
     file: Option<PathBuf>,
+    #[arg(long, default_value_t = false)]
+    to_stdout: bool,
+}
+
+fn set_clipboard_or_stdout(
+    to_stdout: bool,
+    clipboard: &mut Clipboard,
+    data: &ClipboardFormat,
+) -> Result<(), Error> {
+    if to_stdout {
+        println!("{}", data.to_string());
+        return Ok(());
+    }
+
+    clipboard.set_data(data)
 }
 
 fn main() {
@@ -102,28 +119,42 @@ fn main() {
 
     match current_table.get::<Value>("result") {
         Ok(value) => match value {
-            Value::String(s) => clip
-                .set_data(&ClipboardFormat::Text(s.to_string_lossy()))
-                .unwrap(),
+            Value::String(s) => set_clipboard_or_stdout(
+                args.to_stdout,
+                &mut clip,
+                &ClipboardFormat::Text(s.to_string_lossy()),
+            )
+            .unwrap(),
             Value::Nil => {
                 // NOP
             }
-            Value::Boolean(b) => clip
-                .set_data(&ClipboardFormat::Text(b.to_string()))
-                .unwrap(),
-            Value::Integer(n) => clip
-                .set_data(&ClipboardFormat::Text(n.to_string()))
-                .unwrap(),
-            Value::Number(n) => clip
-                .set_data(&ClipboardFormat::Text(n.to_string()))
-                .unwrap(),
+            Value::Boolean(b) => set_clipboard_or_stdout(
+                args.to_stdout,
+                &mut clip,
+                &ClipboardFormat::Text(b.to_string()),
+            )
+            .unwrap(),
+            Value::Integer(n) => set_clipboard_or_stdout(
+                args.to_stdout,
+                &mut clip,
+                &ClipboardFormat::Text(n.to_string()),
+            )
+            .unwrap(),
+            Value::Number(n) => set_clipboard_or_stdout(
+                args.to_stdout,
+                &mut clip,
+                &ClipboardFormat::Text(n.to_string()),
+            )
+            .unwrap(),
             Value::Table(t) => {
                 // TODO: list
                 let handles = vec![lua_table_to_html_table(&lua, &t)];
                 // let handles = lua_table_to_html_list(&lua, &t);
                 let html_handle = create_html_for_clipboard(handles);
                 let html = html_handle_to_string(&html_handle);
-                clip.set_data(&ClipboardFormat::Html(html)).unwrap();
+
+                set_clipboard_or_stdout(args.to_stdout, &mut clip, &ClipboardFormat::Html(html))
+                    .unwrap();
             }
             _ => {
                 // NOP
