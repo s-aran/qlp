@@ -11,18 +11,21 @@ http = ["dep:chitose"]
 mlua = { version = "0.11", features = [
   "anyhow",
   "async",
-  "lua54",
+  "lua55",
   "vendored",
   "macros",
   "serialize",
   "userdata-wrappers",
 ] }
-# html5ever = "0.29"
-# markup5ever = { version = "0.14" }
-# markup5ever_rcdom = { version = "0.3" }
+# html5ever = "0.39"
+# markup5ever = { version = "0.39" }
+# markup5ever_rcdom = { version = "0.38" }
+# xml5ever = { version = "0.39" }
 regex = { version = "1.11", features = ["use_std"] }
 serde_json = "1.0"
 windows = { version = "0.62", features = [
+  "Win32_Globalization",
+  "Win32_System_Console",
   "Win32_System_DataExchange",
   "Win32_System_Ole",
   "Win32_System_Memory",

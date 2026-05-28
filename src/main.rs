@@ -21,6 +21,23 @@ use mlua::Value;
 
 use crate::error::Error;
 
+#[cfg(target_os = "windows")]
+fn configure_console_encoding() {
+    use windows::Win32::{
+        Globalization::CP_UTF8,
+        System::Console::{GetConsoleOutputCP, SetConsoleOutputCP},
+    };
+
+    unsafe {
+        if GetConsoleOutputCP() != CP_UTF8 {
+            let _ = SetConsoleOutputCP(CP_UTF8);
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn configure_console_encoding() {}
+
 #[derive(Debug, Parser, Clone)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -44,6 +61,8 @@ fn set_clipboard_or_stdout(
 }
 
 fn main() {
+    configure_console_encoding();
+
     let args = Args::parse();
 
     // determine script

@@ -41,37 +41,36 @@ impl BuiltinFunction for Include {
 mod tests {
     use std::fs;
 
-    use crate::Mll;
+    use mlua::Lua;
+
+    use super::*;
 
     #[test]
     fn test_include() {
-        let template = r#"{{content}}"#;
         let script = r#"
             content = include("LICENSE")
         "#;
 
-        let mut mll = Mll::new();
-        mll.set_template(template.to_string());
-
-        let render = mll.render_with_lua(script);
+        let lua = Lua::new();
+        let _ = Include {}.set_function(&lua);
+        lua.load(script).exec().unwrap();
 
         let expected = fs::read_to_string("LICENSE").unwrap();
+        let actual = lua.globals().get::<String>("content").unwrap();
 
-        assert_eq!(expected, render.unwrap());
+        assert_eq!(expected, actual);
     }
 
     #[cfg(target_os = "linux")]
     #[test]
     #[should_panic(expected = "No such file or directory (os error 2)")]
     fn test_include_panic() {
-        let template = r#"{{content}}"#;
         let script = r#"
             content = include("LICENSE1")
         "#;
 
-        let mut mll = Mll::new();
-        mll.set_template(template.to_string());
-
-        let _ = mll.render_with_lua(script);
+        let lua = Lua::new();
+        let _ = Include {}.set_function(&lua);
+        lua.load(script).exec().unwrap();
     }
 }

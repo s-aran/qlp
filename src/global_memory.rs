@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 use windows::Win32::{
     Foundation::{GetLastError, GlobalFree, HANDLE, HGLOBAL},
     System::Memory::{

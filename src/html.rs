@@ -4,7 +4,7 @@ use html5ever::{
     Attribute, parse_document,
     serialize::{HtmlSerializer, Serialize, SerializeOpts, TraversalScope},
 };
-use markup5ever::{QualName, local_name, namespace_url, ns};
+use markup5ever::{QualName, local_name, ns};
 use markup5ever_rcdom::{Handle, Node, NodeData, RcDom, SerializableHandle};
 
 use mlua::{Lua, Table, Value};
@@ -13,6 +13,7 @@ use xml5ever::tendril::{Tendril, TendrilSink};
 #[derive(Debug)]
 struct Working {
     table_stack: Vec<Handle>,
+    sheet_roots: Vec<Handle>,
     body_topnode: Option<Handle>,
 }
 
@@ -20,9 +21,17 @@ impl Default for Working {
     fn default() -> Self {
         Self {
             table_stack: Default::default(),
+            sheet_roots: Default::default(),
             body_topnode: Default::default(),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+enum HtmlTableSource {
+    Table(Handle),
+    GoogleSheetsInline(Handle),
+    HtmlFragment(Handle),
 }
 
 pub fn parse_html(html: &String) -> RcDom {
@@ -40,7 +49,12 @@ pub fn parse_html(html: &String) -> RcDom {
 }
 
 fn walk(handle: &Handle, working: &mut Working) {
-    if let NodeData::Element { ref name, .. } = handle.data {
+    if let NodeData::Element {
+        ref name,
+        ref attrs,
+        ..
+    } = handle.data
+    {
         match name.local.as_ref() {
             "table" => {
                 working.table_stack.push(handle.clone());
@@ -50,16 +64,64 @@ fn walk(handle: &Handle, working: &mut Working) {
             "td" => {}
             _ => {}
         }
+
+        if attrs
+            .borrow()
+            .iter()
+            .any(|attr| attr.name.local.as_ref() == "data-sheets-root")
+        {
+            working.sheet_roots.push(handle.clone());
+        }
     }
 
     let children = handle.children.borrow();
     for child in children.iter() {
-        if working.body_topnode.is_none() {
+        if working.body_topnode.is_none() && is_body_child(handle, child) {
             working.body_topnode = Some(child.clone());
         }
 
         walk(child, working);
     }
+}
+
+fn is_body_child(parent: &Handle, child: &Handle) -> bool {
+    if let NodeData::Element { ref name, .. } = parent.data {
+        if name.local.as_ref() == "body" {
+            return match child.data {
+                NodeData::Text { ref contents } => !contents.borrow().trim().is_empty(),
+                NodeData::Comment { .. } => false,
+                _ => true,
+            };
+        }
+    }
+
+    false
+}
+
+fn collect_table_sources(working: &Working) -> Vec<HtmlTableSource> {
+    if !working.table_stack.is_empty() {
+        return working
+            .table_stack
+            .iter()
+            .cloned()
+            .map(HtmlTableSource::Table)
+            .collect();
+    }
+
+    if !working.sheet_roots.is_empty() {
+        return working
+            .sheet_roots
+            .iter()
+            .cloned()
+            .map(HtmlTableSource::GoogleSheetsInline)
+            .collect();
+    }
+
+    working
+        .body_topnode
+        .clone()
+        .map(|node| vec![HtmlTableSource::HtmlFragment(node)])
+        .unwrap_or_default()
 }
 
 fn get_rows(table: &Handle) -> Vec<Handle> {
@@ -94,13 +156,13 @@ fn get_header(row: &Handle) -> Vec<Handle> {
     items
 }
 
-fn get_data(row: &Handle) -> Vec<Handle> {
+fn get_cells(row: &Handle) -> Vec<Handle> {
     let mut items = Vec::new();
 
     let children = row.children.borrow();
     for child in children.iter() {
         if let NodeData::Element { ref name, .. } = child.data {
-            if name.local.as_ref() == "td" {
+            if name.local.as_ref() == "td" || name.local.as_ref() == "th" {
                 items.push(child.clone());
             }
         }
@@ -126,7 +188,10 @@ fn get_anchor_href(handle: &Handle) -> Option<String> {
                     }
                 }
             } else {
-                return get_anchor_href(child);
+                let href = get_anchor_href(child);
+                if href.is_some() {
+                    return href;
+                }
             }
         }
     }
@@ -154,55 +219,43 @@ pub fn rc_dom_to_lua_table(lua: &mlua::Lua, dom: RcDom) -> mlua::Table {
     walk(&dom.document, &mut working);
 
     let table = lua.create_table().unwrap();
+    let mut row_index = 1;
 
-    if working.table_stack.len() <= 0 {
-        let cell = working.body_topnode.unwrap();
-        let row_table = lua.create_table().unwrap();
-        let data_table = lua.create_table().unwrap();
-        data_table.set("text", get_text(&cell)).unwrap();
-        if let Some(href) = get_anchor_href(&cell) {
-            data_table.set("href", href).unwrap();
-        }
+    for source in collect_table_sources(&working) {
+        match source {
+            HtmlTableSource::Table(table_handle) => {
+                for row in get_rows(&table_handle) {
+                    let row_table = lua.create_table().unwrap();
 
-        // lua to start arrays with index 1
-        row_table.set(1, data_table).unwrap();
-        table.set(1, row_table).unwrap();
-    }
+                    for (column_n, cell) in get_cells(&row).iter().enumerate() {
+                        set_cell(lua, &row_table, column_n + 1, cell);
+                    }
 
-    while working.table_stack.len() > 0 {
-        let table_handle = working.table_stack.pop().unwrap();
-        for (row_i, row) in get_rows(&table_handle).iter().enumerate() {
-            let row_table = lua.create_table().unwrap();
-
-            for (column_n, cell) in get_data(&row).iter().enumerate() {
-                // Table
-                //   +-- row_n : (table)
-                //   |            +-- column_n: (table)
-                //   |            |              +-- (if anchor) href: url
-                //   |            |              `-- text: text
-                //   |            +-- :
-                //   |            +-- :
-                //   |            `-- :
-                //   +-- :
-                //   +-- :
-                //   `-- :
-
-                let data_table = lua.create_table().unwrap();
-                data_table.set("text", get_text(cell)).unwrap();
-                if let Some(href) = get_anchor_href(cell) {
-                    data_table.set("href", href).unwrap();
+                    table.set(row_index, row_table).unwrap();
+                    row_index += 1;
                 }
-
-                // lua to start arrays with index 1
-                row_table.set(column_n + 1, data_table).unwrap();
             }
-
-            // lua to start arrays with index 1
-            table.set(row_i + 1, row_table).unwrap();
+            HtmlTableSource::GoogleSheetsInline(cell) | HtmlTableSource::HtmlFragment(cell) => {
+                let row_table = lua.create_table().unwrap();
+                set_cell(lua, &row_table, 1, &cell);
+                table.set(row_index, row_table).unwrap();
+                row_index += 1;
+            }
         }
     }
 
     table
+}
+
+fn set_cell(lua: &mlua::Lua, row_table: &mlua::Table, column_n: usize, cell: &Handle) {
+    let data_table = lua.create_table().unwrap();
+    data_table.set("text", get_text(cell)).unwrap();
+    if let Some(href) = get_anchor_href(cell) {
+        data_table.set("href", href).unwrap();
+    }
+
+    // lua to start arrays with index 1
+    row_table.set(column_n, data_table).unwrap();
 }
 
 fn print_table(table: &mlua::Table, indent: u32) {
@@ -588,6 +641,21 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_standard_html_table_with_single_cell() {
+        let html = r#"<html><body><table><tr><td>single</td></tr></table></body></html>"#;
+
+        let dom = parse_html(&html.to_string());
+        let lua = mlua::Lua::new();
+        let table = rc_dom_to_lua_table(&lua, dom);
+
+        assert_eq!(1, table.len().unwrap());
+        let row = table.get::<Table>(1).unwrap();
+        assert_eq!(1, row.len().unwrap());
+        let cell = row.get::<Table>(1).unwrap();
+        assert_eq!("single", cell.get::<String>("text").unwrap());
+    }
+
+    #[test]
     fn test_parse_html3() {
         let html = r#"<html>
 <body>
@@ -612,7 +680,7 @@ mod tests {
 
         // assert row length
         let actual_rows = &actual_table.get::<Table>(1).unwrap();
-        assert_eq!(2, actual_rows.len().unwrap());
+        assert_eq!(1, actual_rows.len().unwrap());
 
         // assert cell 1
         let actual_cells = &actual_rows.get::<Table>(1).unwrap();
@@ -662,7 +730,10 @@ mod tests {
 
         println!("{}", html_handle_to_string(&actual_html));
 
-        assert!(false)
+        let actual = html_handle_to_string(&actual_html);
+        assert!(actual.contains("<table>"));
+        assert!(actual.contains("<td>aa</td>"));
+        assert!(actual.contains(r#"<a href="https://example.com/">cc</a>"#));
     }
 
     #[test]

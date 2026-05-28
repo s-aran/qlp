@@ -1,5 +1,6 @@
 use std::process::Command;
 
+use encoding_rs::SHIFT_JIS;
 use mlua::{FromLua, Function, IntoLua, Lua};
 
 use super::builtin::BuiltinFunction;
@@ -54,8 +55,18 @@ fn system(program: String, args: Vec<String>) -> ExecResult {
 
     ExecResult {
         code: output.status.code().unwrap(),
-        stdout: String::from_utf8(output.stdout).unwrap(),
-        stderr: String::from_utf8(output.stderr).unwrap(),
+        stdout: decode_process_output(&output.stdout),
+        stderr: decode_process_output(&output.stderr),
+    }
+}
+
+fn decode_process_output(bytes: &[u8]) -> String {
+    match std::str::from_utf8(bytes) {
+        Ok(s) => s.to_owned(),
+        Err(_) => {
+            let (s, _, _) = SHIFT_JIS.decode(bytes);
+            s.into_owned()
+        }
     }
 }
 
@@ -66,15 +77,12 @@ mod tests {
 
     #[test]
     fn test_system() {
-        let program = "echo".to_string();
-        let args = vec!["foo", "bar", "baz", "qux"]
-            .iter()
-            .map(|e| (*e).into())
-            .collect::<Vec<String>>();
+        let (program, args, expected) = echo_command();
+        let args = args.iter().map(|e| (*e).into()).collect::<Vec<String>>();
         let result = system(program, args);
 
         assert_eq!(0, result.code);
-        assert_eq!("foo bar baz qux\n", result.stdout);
+        assert_eq!(expected, result.stdout);
         assert_eq!("", result.stderr);
     }
 
@@ -83,14 +91,33 @@ mod tests {
         let lua = Lua::new();
 
         let _ = Exec {}.set_function(&lua);
-        let _ = lua
-            .load(r#"result = exec("echo", {"foo", "bar", "baz", "qux"})"#)
-            .exec();
+        let (program, args, expected) = echo_command();
+        lua.globals().set("program", program).unwrap();
+        lua.globals().set("args", args).unwrap();
+        lua.load(r#"result = exec(program, args)"#).exec().unwrap();
 
         let result = lua.globals().get::<ExecResult>("result").unwrap();
 
         assert_eq!(0, result.code);
-        assert_eq!("foo bar baz qux\n", result.stdout);
+        assert_eq!(expected, result.stdout);
         assert_eq!("", result.stderr);
+    }
+
+    #[cfg(target_os = "windows")]
+    fn echo_command() -> (String, Vec<&'static str>, &'static str) {
+        (
+            "cmd".to_string(),
+            vec!["/C", "echo foo bar baz qux"],
+            "foo bar baz qux\r\n",
+        )
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn echo_command() -> (String, Vec<&'static str>, &'static str) {
+        (
+            "echo".to_string(),
+            vec!["foo", "bar", "baz", "qux"],
+            "foo bar baz qux\n",
+        )
     }
 }

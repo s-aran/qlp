@@ -66,6 +66,8 @@ pub mod clipboard {
 
 #[cfg(target_os = "windows")]
 pub mod clipboard {
+    use std::ffi::c_void;
+
     use regex::Regex;
 
     use crate::{error::Error, global_memory::GlobalMemory, win_clipboard::WinClipboard};
@@ -80,19 +82,17 @@ pub mod clipboard {
             }
         }
 
-        fn decode(data: *const u16, size: usize, format: &ClipboardFormat) -> String {
-            let slice = unsafe { std::slice::from_raw_parts(data, size / 2) };
+        fn decode(data: *const c_void, size: usize, format: &ClipboardFormat) -> String {
             match format {
-                // reduce last \0
-                ClipboardFormat::Text(_) => String::from_utf16(&slice[..slice.len() - 1]).unwrap(),
+                ClipboardFormat::Text(_) => {
+                    let slice = unsafe { std::slice::from_raw_parts(data as *const u16, size / 2) };
+                    let end = slice.iter().position(|c| *c == 0).unwrap_or(slice.len());
+                    String::from_utf16_lossy(&slice[..end])
+                }
                 ClipboardFormat::Html(_) => {
-                    let mut utf8_vec: Vec<u8> = vec![];
-                    slice.iter().for_each(|e| {
-                        utf8_vec.push(*e as u8);
-                        utf8_vec.push((e >> 8) as u8);
-                    });
-                    // reduce last \0
-                    String::from_utf8_lossy(&utf8_vec[..&utf8_vec.len() - 1]).to_string()
+                    let slice = unsafe { std::slice::from_raw_parts(data as *const u8, size) };
+                    let end = slice.iter().position(|c| *c == 0).unwrap_or(slice.len());
+                    String::from_utf8_lossy(&slice[..end]).to_string()
                 }
             }
         }
@@ -162,7 +162,7 @@ pub mod clipboard {
 
             let mut mem = GlobalMemory::new();
             let data = match mem.lock_by_handle(h_global) {
-                Ok(ptr) => ptr as *const u16,
+                Ok(ptr) => ptr,
                 Err(e) => {
                     return Err(Error::new(format!(
                         "Failed to lock memory by handle: {}",
@@ -180,17 +180,22 @@ pub mod clipboard {
         }
 
         fn set_data(&mut self, data: &ClipboardFormat) -> Result<(), Error> {
-            let (src_str, char_size) = match data {
-                ClipboardFormat::Text(s) => (s.to_owned(), 16),
-                ClipboardFormat::Html(s) => (Clipboard::append_clipboard_data(s), 8),
+            let (src_str, global_size) = match data {
+                ClipboardFormat::Text(s) => {
+                    let len = s.encode_utf16().count();
+                    (s.to_owned(), (len + 1) * std::mem::size_of::<u16>())
+                }
+                ClipboardFormat::Html(s) => {
+                    let src = Clipboard::append_clipboard_data(s);
+                    let len = src.len();
+                    (src, len + 1)
+                }
             };
 
             let mut instance = Clipboard::create_instance_by(data);
 
             instance.open()?;
             instance.empty()?;
-
-            let global_size = (src_str.len() + 1) * char_size;
 
             let mut mem = GlobalMemory::new();
             let ptr = match mem.alloc_without_free(global_size) {
@@ -262,7 +267,14 @@ pub mod clipboard {
             }
 
             let s = data.to_string();
-            String::from(s.get(start..(end - 2)).unwrap())
+            if start >= end || end > s.len() {
+                return s;
+            }
+
+            s.get(start..end)
+                .unwrap_or_default()
+                .trim_end_matches('\0')
+                .to_string()
         }
 
         fn determine_format(&self) -> Result<ClipboardFormat, Error> {
