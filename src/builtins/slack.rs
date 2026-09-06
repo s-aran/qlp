@@ -180,7 +180,7 @@ fn wrap_inline(marker: &str, value: String) -> String {
 fn get_attr(handle: &Handle, name: &str) -> Option<String> {
     if let NodeData::Element { ref attrs, .. } = handle.data {
         for attr in attrs.borrow().iter() {
-            if attr.name.local.as_ref() == name {
+            if &*attr.name.local == name {
                 return Some(attr.value.to_string());
             }
         }
@@ -191,7 +191,7 @@ fn get_attr(handle: &Handle, name: &str) -> Option<String> {
 
 fn is_element(handle: &Handle, tag_name: &str) -> bool {
     if let NodeData::Element { ref name, .. } = handle.data {
-        return name.local.as_ref() == tag_name;
+        return &*name.local == tag_name;
     }
 
     false

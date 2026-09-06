@@ -109,7 +109,7 @@ fn is_array(_: &Lua, table: &Table) -> Result<bool> {
 /// # Returns
 ///
 /// `String` - The Shift-JIS string
-pub fn lua_string_to_shift_jis(lua: &Lua, string: mlua::String) -> mlua::String {
+pub fn lua_string_to_shift_jis(lua: &Lua, string: mlua::LuaString) -> mlua::LuaString {
     let ls = string.to_str().unwrap();
     let (s, _, _) = SHIFT_JIS.encode(&ls);
     lua.create_string(&s).unwrap()

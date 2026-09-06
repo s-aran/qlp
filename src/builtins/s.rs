@@ -21,7 +21,7 @@ impl BuiltinFunction for ShiftJis {
         let lua_ref = lua.clone();
         lua_ref
             .clone()
-            .create_function(move |l: &Lua, string: mlua::String| {
+            .create_function(move |l: &Lua, string: mlua::LuaString| {
                 let s = lua_string_to_shift_jis(&l, string);
                 Ok(s.clone())
             })

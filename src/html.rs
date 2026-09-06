@@ -68,7 +68,7 @@ fn walk(handle: &Handle, working: &mut Working) {
         if attrs
             .borrow()
             .iter()
-            .any(|attr| attr.name.local.as_ref() == "data-sheets-root")
+            .any(|attr| &*attr.name.local == "data-sheets-root")
         {
             working.sheet_roots.push(handle.clone());
         }
@@ -86,7 +86,7 @@ fn walk(handle: &Handle, working: &mut Working) {
 
 fn is_body_child(parent: &Handle, child: &Handle) -> bool {
     if let NodeData::Element { ref name, .. } = parent.data {
-        if name.local.as_ref() == "body" {
+        if &*name.local == "body" {
             return match child.data {
                 NodeData::Text { ref contents } => !contents.borrow().trim().is_empty(),
                 NodeData::Comment { .. } => false,
@@ -130,9 +130,9 @@ fn get_rows(table: &Handle) -> Vec<Handle> {
     let children = table.children.borrow();
     for child in children.iter() {
         if let NodeData::Element { ref name, .. } = child.data {
-            if name.local.as_ref() == "tr" {
+            if &*name.local == "tr" {
                 rows.push(child.clone());
-            } else if name.local.as_ref() == "thead" || name.local.as_ref() == "tbody" {
+            } else if &*name.local == "thead" || &*name.local == "tbody" {
                 rows.extend(get_rows(child));
             }
         }
@@ -147,7 +147,7 @@ fn get_header(row: &Handle) -> Vec<Handle> {
     let children = row.children.borrow();
     for child in children.iter() {
         if let NodeData::Element { ref name, .. } = child.data {
-            if name.local.as_ref() == "th" {
+            if &*name.local == "th" {
                 items.push(child.clone());
             }
         }
@@ -162,7 +162,7 @@ fn get_cells(row: &Handle) -> Vec<Handle> {
     let children = row.children.borrow();
     for child in children.iter() {
         if let NodeData::Element { ref name, .. } = child.data {
-            if name.local.as_ref() == "td" || name.local.as_ref() == "th" {
+            if &*name.local == "td" || &*name.local == "th" {
                 items.push(child.clone());
             }
         }
@@ -181,9 +181,9 @@ fn get_anchor_href(handle: &Handle) -> Option<String> {
             ..
         } = child.data
         {
-            if name.local.as_ref() == "a" {
+            if &*name.local == "a" {
                 for attr in attrs.borrow().iter() {
-                    if attr.name.local.as_ref() == "href" {
+                    if &*attr.name.local == "href" {
                         return Some(attr.value.to_string());
                     }
                 }
@@ -458,7 +458,7 @@ fn lua_table_to_ul(lua: &Lua, value: &Table) -> Handle {
         let found_ul = children.iter().find(|e| {
             match e.data {
                 NodeData::Element { ref name, .. } => {
-                    if name.local.as_ref() == "ul" {
+                    if &*name.local == "ul" {
                         return true;
                     }
                 }
