@@ -43,8 +43,6 @@ mod tests {
 
     use mlua::Lua;
 
-    use super::*;
-
     #[test]
     fn test_include() {
         let script = r#"
@@ -52,7 +50,7 @@ mod tests {
         "#;
 
         let lua = Lua::new();
-        let _ = Include {}.set_function(&lua);
+        crate::builtin::init(&lua).unwrap();
         lua.load(script).exec().unwrap();
 
         let expected = fs::read_to_string("LICENSE").unwrap();
@@ -70,7 +68,7 @@ mod tests {
         "#;
 
         let lua = Lua::new();
-        let _ = Include {}.set_function(&lua);
+        crate::builtin::init(&lua).unwrap();
         lua.load(script).exec().unwrap();
     }
 }
